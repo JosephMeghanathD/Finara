@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { txnApi, aiApi } from '../utils/api'
+import { aiApi } from '../utils/api'
+import { useTimeFilter } from '../hooks/useTimeFilter'
 import { BookOpen, Sparkles, RefreshCw, MessageCircle, Zap } from 'lucide-react'
 import AiText from '../components/AiText'
 import AiLoader from '../components/AiLoader'
 import toast from 'react-hot-toast'
-import MonthRangePicker from '../components/MonthRangePicker'
 import { format, parseISO } from 'date-fns'
 
 function fmtMonth(m) {
@@ -21,19 +21,9 @@ function fmtRange(s, e) {
 
 export default function StoryPage() {
   const navigate = useNavigate()
-  const [months, setMonths]         = useState([])
-  const [startMonth, setStartMonth] = useState('')
-  const [endMonth, setEndMonth]     = useState('')
-  const [story, setStory]           = useState('')
-  const [loading, setLoading]       = useState(false)
-
-  useEffect(() => {
-    txnApi.months().then(r => {
-      setMonths(r.data)
-      if (r.data.length > 0) { setStartMonth(r.data[0]); setEndMonth(r.data[0]) }
-    })
-  }, [])
-
+  const { months, startMonth, endMonth } = useTimeFilter()
+  const [story, setStory]   = useState('')
+  const [loading, setLoading] = useState(false)
   const [timing, setTiming] = useState(null)
 
   const generate = async (refresh = false) => {
@@ -66,16 +56,8 @@ export default function StoryPage() {
         </span>
       </div>
 
-      <div className="card flex items-center justify-between gap-4 flex-wrap">
-        {months.length > 0 && (
-          <MonthRangePicker
-            months={months}
-            startMonth={startMonth}
-            endMonth={endMonth}
-            onChange={({ startMonth: s, endMonth: e }) => { setStartMonth(s); setEndMonth(e) }}
-          />
-        )}
-        <button onClick={generate} disabled={loading || !startMonth}
+      <div className="card flex items-center justify-end gap-4">
+        <button onClick={() => generate(false)} disabled={loading || !startMonth}
           className="btn-primary flex items-center gap-2 flex-shrink-0">
           {loading
             ? <><RefreshCw size={15} className="animate-spin" /> Writing…</>
@@ -142,7 +124,7 @@ export default function StoryPage() {
             <>
               <p className="font-semibold mb-1" style={{ color: 'var(--text)' }}>Your story awaits</p>
               <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-                Select a month and hit Generate — Finara will narrate what happened
+                Select a period in the top bar, then hit Generate
               </p>
             </>
           )}

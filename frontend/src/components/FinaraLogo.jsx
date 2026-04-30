@@ -1,8 +1,19 @@
+import { useId } from 'react'
+
 /**
  * Finara logomark — ascending bar chart with trend line and AI sparkle.
  * Self-contained SVG: background is baked in, scales to any size.
  */
 export default function FinaraLogo({ size = 32, className = '' }) {
+  // Unique IDs per instance so multiple logos on the same page don't clash
+  const uid = useId().replace(/:/g, '')
+  const ids = {
+    bg:    `fl-bg-${uid}`,
+    bar:   `fl-bar-${uid}`,
+    bloom: `fl-bloom-${uid}`,
+    inner: `fl-inner-${uid}`,
+  }
+
   return (
     <svg
       width={size}
@@ -15,44 +26,44 @@ export default function FinaraLogo({ size = 32, className = '' }) {
     >
       <defs>
         {/* Dark navy background gradient — diagonal */}
-        <linearGradient id="fl-bg" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+        <linearGradient id={ids.bg} x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
           <stop offset="0%"   stopColor="#071c40" />
           <stop offset="100%" stopColor="#0d3270" />
         </linearGradient>
 
         {/* Bar fill — each bar goes from bright top to deep bottom */}
-        <linearGradient id="fl-bar" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+        <linearGradient id={ids.bar} x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
           <stop offset="0%"   stopColor="#5a9fff" />
           <stop offset="100%" stopColor="#1a4db8" />
         </linearGradient>
 
         {/* Soft radial bloom behind the sparkle */}
-        <radialGradient id="fl-bloom" cx="50%" cy="50%" r="50%">
+        <radialGradient id={ids.bloom} cx="50%" cy="50%" r="50%">
           <stop offset="0%"   stopColor="#4d8eff" stopOpacity="0.55" />
           <stop offset="100%" stopColor="#4d8eff" stopOpacity="0"   />
         </radialGradient>
 
         {/* Subtle inner vignette light at top-right — gives depth */}
-        <radialGradient id="fl-inner" cx="80%" cy="20%" r="60%">
+        <radialGradient id={ids.inner} cx="80%" cy="20%" r="60%">
           <stop offset="0%"   stopColor="#1a50b0" stopOpacity="0.6" />
           <stop offset="100%" stopColor="#1a50b0" stopOpacity="0"   />
         </radialGradient>
       </defs>
 
       {/* ── Background ── */}
-      <rect width="32" height="32" rx="9" fill="url(#fl-bg)" />
-      <rect width="32" height="32" rx="9" fill="url(#fl-inner)" />
+      <rect width="32" height="32" rx="9" fill={`url(#${ids.bg})`} />
+      <rect width="32" height="32" rx="9" fill={`url(#${ids.inner})`} />
 
       {/* ── Baseline ── */}
       <line x1="4" y1="27" x2="28" y2="27" stroke="#1d4a9a" strokeWidth="0.6" />
 
       {/* ── Ascending bars (bottom baseline = y 27) ── */}
       {/* Bar 1 — short */}
-      <rect x="5"  y="20" width="5" height="7"  rx="1.5" fill="url(#fl-bar)" opacity="0.75" />
+      <rect x="5"  y="20" width="5" height="7"  rx="1.5" fill={`url(#${ids.bar})`} opacity="0.75" />
       {/* Bar 2 — medium */}
-      <rect x="13" y="13" width="5" height="14" rx="1.5" fill="url(#fl-bar)" opacity="0.88" />
+      <rect x="13" y="13" width="5" height="14" rx="1.5" fill={`url(#${ids.bar})`} opacity="0.88" />
       {/* Bar 3 — tall (the "story peak") */}
-      <rect x="21" y="8"  width="5" height="19" rx="1.5" fill="url(#fl-bar)" />
+      <rect x="21" y="8"  width="5" height="19" rx="1.5" fill={`url(#${ids.bar})`} />
 
       {/* ── Trend line connecting bar tops ── */}
       <path
@@ -65,7 +76,7 @@ export default function FinaraLogo({ size = 32, className = '' }) {
 
       {/* ── AI sparkle at the peak ── */}
       {/* Soft bloom */}
-      <circle cx="23.5" cy="6" r="4" fill="url(#fl-bloom)" />
+      <circle cx="23.5" cy="6" r="4" fill={`url(#${ids.bloom})`} />
       {/* Core dot */}
       <circle cx="23.5" cy="6" r="1.8" fill="white" />
       {/* Cardinal rays */}

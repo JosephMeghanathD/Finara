@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { txnApi, reportApi } from '../utils/api'
+import { useTimeFilter } from '../hooks/useTimeFilter'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, LineChart, Line, CartesianGrid } from 'recharts'
 import AiLoader from '../components/AiLoader'
 
@@ -11,18 +12,15 @@ const TOOLTIP_STYLE = {
 }
 
 export default function ComparePage() {
-  const [months, setMonths]       = useState([])
+  const { months } = useTimeFilter()
   const [selected, setSelected]   = useState([])
   const [reports, setReports]     = useState([])
   const [loading, setLoading]     = useState(false)
   const [dailyData, setDailyData] = useState([])
 
   useEffect(() => {
-    txnApi.months().then(r => {
-      setMonths(r.data)
-      setSelected(r.data.slice(0, 3))
-    })
-  }, [])
+    if (months.length > 0 && selected.length === 0) setSelected(months.slice(0, 3))
+  }, [months])
 
   useEffect(() => {
     if (selected.length < 2) return

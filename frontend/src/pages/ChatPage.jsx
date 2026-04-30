@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { txnApi, aiApi } from '../utils/api'
+import { aiApi } from '../utils/api'
+import { useTimeFilter } from '../hooks/useTimeFilter'
 import { Send, MessageSquare, Sparkles } from 'lucide-react'
 import AiText from '../components/AiText'
-import MonthRangePicker from '../components/MonthRangePicker'
 import { format, parseISO } from 'date-fns'
 
 const THINKING_PHRASES = [
@@ -120,10 +120,12 @@ function UserBubble({ content }) {
 export default function ChatPage() {
   const location = useLocation()
   const storyCtx = location.state?.storyContext
+  const { startMonth: globalStart, endMonth: globalEnd } = useTimeFilter()
 
-  const [months, setMonths]         = useState([])
-  const [startMonth, setStartMonth] = useState('')
-  const [endMonth, setEndMonth]     = useState('')
+  // If arriving from Story page with context, use that period; otherwise use global filter
+  const startMonth = storyCtx?.startMonth || globalStart
+  const endMonth   = storyCtx?.endMonth   || globalEnd
+
   const [messages, setMessages]     = useState(() => {
     if (!storyCtx?.story) return []
     return [{
@@ -137,18 +139,6 @@ export default function ChatPage() {
   const [input, setInput]           = useState('')
   const [loading, setLoading]       = useState(false)
   const bottomRef = useRef(null)
-
-  useEffect(() => {
-    txnApi.months().then(r => {
-      setMonths(r.data)
-      if (storyCtx?.startMonth) {
-        setStartMonth(storyCtx.startMonth)
-        setEndMonth(storyCtx.endMonth)
-      } else if (r.data[0]) {
-        setStartMonth(r.data[0]); setEndMonth(r.data[0])
-      }
-    })
-  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -182,21 +172,11 @@ export default function ChatPage() {
             Chat with Finara powered by Gemma
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5"
-            style={{ background: 'var(--brand-light)', color: 'var(--brand)',
-              border: '1px solid rgba(99,102,241,0.2)' }}>
-            <Sparkles size={11} /> Finara AI
-          </span>
-          {months.length > 0 && (
-            <MonthRangePicker
-              months={months}
-              startMonth={startMonth}
-              endMonth={endMonth}
-              onChange={({ startMonth: s, endMonth: e }) => { setStartMonth(s); setEndMonth(e) }}
-            />
-          )}
-        </div>
+        <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5"
+          style={{ background: 'var(--brand-light)', color: 'var(--brand)',
+            border: '1px solid rgba(99,102,241,0.2)' }}>
+          <Sparkles size={11} /> Finara AI
+        </span>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-4 pb-4 pr-1">

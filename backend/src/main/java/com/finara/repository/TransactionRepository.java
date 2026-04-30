@@ -54,6 +54,19 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
                                                @Param("startMonth") String startMonth,
                                                @Param("endMonth") String endMonth);
 
+    // Excludes anomalous transactions — used for savings planning so one-off events
+    // (ER visits, big trips, appliance failures) don't distort the typical monthly picture.
+    @Query(value = "SELECT category, SUM(amount) FROM transactions " +
+                   "WHERE user_id = :userId " +
+                   "AND TO_CHAR(transaction_date, 'YYYY-MM') BETWEEN :startMonth AND :endMonth " +
+                   "AND (transaction_type IS NULL OR transaction_type = 'DEBIT') " +
+                   "AND (is_anomaly IS NULL OR is_anomaly = FALSE) " +
+                   "GROUP BY category ORDER BY SUM(amount) DESC",
+           nativeQuery = true)
+    List<Object[]> getCategorySummaryForRangeNormal(@Param("userId") Long userId,
+                                                     @Param("startMonth") String startMonth,
+                                                     @Param("endMonth") String endMonth);
+
     @Query(value = "SELECT DISTINCT TO_CHAR(transaction_date, 'YYYY-MM') " +
                    "FROM transactions WHERE user_id = :userId ORDER BY 1 DESC",
            nativeQuery = true)

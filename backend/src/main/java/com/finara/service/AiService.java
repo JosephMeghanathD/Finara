@@ -281,14 +281,16 @@ public class AiService {
     }
 
     private Map<String, Double> getCategoryTotals(Long userId, String startMonth, String endMonth) {
-        List<Object[]> rows = transactionRepository.getCategorySummaryForRange(userId, startMonth, endMonth);
-        // Exclude internal tracking categories — Income is CREDIT and Transfer is savings movement
+        // Use the anomaly-free query so large one-off events (ER visits, big trips,
+        // appliance failures) don't inflate the typical monthly spending figure.
+        List<Object[]> rows = transactionRepository.getCategorySummaryForRangeNormal(userId, startMonth, endMonth);
         Set<String> excluded = Set.of("Income", "Transfer");
+        long months = numMonthsBetween(startMonth, endMonth);
         Map<String, Double> result = new LinkedHashMap<>();
         for (Object[] row : rows) {
             String cat = row[0] != null ? (String) row[0] : "Other";
             if (!excluded.contains(cat))
-                result.put(cat, ((Number) row[1]).doubleValue());
+                result.put(cat, ((Number) row[1]).doubleValue() / months);
         }
         return result;
     }

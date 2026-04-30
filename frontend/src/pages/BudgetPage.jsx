@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { txnApi, budgetApi } from '../utils/api'
+import { budgetApi } from '../utils/api'
+import { useTimeFilter } from '../hooks/useTimeFilter'
 import { Sparkles } from 'lucide-react'
 import toast from 'react-hot-toast'
 import AiLoader from '../components/AiLoader'
@@ -15,7 +16,7 @@ const CATEGORY_COLORS = {
 }
 
 export default function BudgetPage() {
-  const [months, setMonths]   = useState([])
+  const { months, endMonth } = useTimeFilter()
   const [month, setMonth]     = useState('')
   const [budgets, setBudgets] = useState({})
   const [result, setResult]   = useState(null)
@@ -23,9 +24,10 @@ export default function BudgetPage() {
   const [saving, setSaving]   = useState(false)
   const [tab, setTab]         = useState('set')
 
+  // Sync with global filter's end month when it first loads
   useEffect(() => {
-    txnApi.months().then(r => { setMonths(r.data); if (r.data[0]) setMonth(r.data[0]) })
-  }, [])
+    if (endMonth && !month) setMonth(endMonth)
+  }, [endMonth])
 
   const loadBudgetData = () => {
     if (!month) return

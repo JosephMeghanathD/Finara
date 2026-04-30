@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { txnApi, reportApi } from '../utils/api'
+import { reportApi } from '../utils/api'
+import { useTimeFilter } from '../hooks/useTimeFilter'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   LineChart, Line, CartesianGrid, ReferenceLine, Legend,
@@ -19,29 +20,27 @@ const TrendIcon = ({ trend }) => {
 }
 
 export default function ForecastPage() {
-  const [months, setMonths]       = useState([])
+  const { months } = useTimeFilter()
   const [month, setMonth]         = useState('')
   const [forecast, setForecast]   = useState(null)
   const [loading, setLoading]     = useState(false)
   const [historyLine, setHistoryLine] = useState([])
 
   useEffect(() => {
-    txnApi.months().then(r => {
-      setMonths(r.data)
-      if (r.data[0]) {
-        const [y, m] = r.data[0].split('-').map(Number)
-        const next = m === 12 ? `${y+1}-01` : `${y}-${String(m+1).padStart(2,'0')}`
-        setMonth(next)
-      }
-      if (r.data.length >= 2) {
-        reportApi.list(r.data.slice(0, 8).join(','))
-          .then(rep => setHistoryLine(
-            (rep.data || []).map(m => ({ month: m.month.slice(5), total: Math.round(m.total || 0) })).reverse()
-          ))
-          .catch(() => {})
-      }
-    })
-  }, [])
+    if (months.length === 0) return
+    if (!month && months[0]) {
+      const [y, m] = months[0].split('-').map(Number)
+      const next = m === 12 ? `${y+1}-01` : `${y}-${String(m+1).padStart(2,'0')}`
+      setMonth(next)
+    }
+    if (months.length >= 2) {
+      reportApi.list(months.slice(0, 8).join(','))
+        .then(rep => setHistoryLine(
+          (rep.data || []).map(m => ({ month: m.month.slice(5), total: Math.round(m.total || 0) })).reverse()
+        ))
+        .catch(() => {})
+    }
+  }, [months])
 
   useEffect(() => {
     if (!month || months.length === 0) return

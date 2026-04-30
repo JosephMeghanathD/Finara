@@ -1,11 +1,11 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { useAuth } from '../hooks/useAuth'
+import { Outlet, NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Upload, BookOpen, List, AlertTriangle,
   TrendingUp, Target, BarChart2, PiggyBank, MessageSquare,
-  Lightbulb, LogOut, Sparkles,
+  Lightbulb, Sparkles,
 } from 'lucide-react'
 import FinaraLogo from './FinaraLogo'
+import TopBar from './TopBar'
 
 const NAV_SECTIONS = [
   {
@@ -42,10 +42,6 @@ const INACTIVE_COLOR= '#8c909f'
 const LABEL_COLOR   = '#424754'
 
 export default function Layout() {
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
-  const handleLogout = () => { logout(); navigate('/login') }
-
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
 
@@ -56,10 +52,7 @@ export default function Layout() {
         {/* Logo */}
         <div className="px-5 pt-6 pb-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: 'var(--brand)', boxShadow: '0 0 12px rgba(77,142,255,0.4)' }}>
-              <span className="text-white font-bold text-xs">F</span>
-            </div>
+            <FinaraLogo size={28} />
             <span className="font-bold text-base tracking-tight" style={{ color: '#e1e2ec' }}>
               Finara
             </span>
@@ -110,39 +103,17 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* User footer */}
-        <div className="px-3 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="flex items-center gap-2.5 px-2">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-              style={{ background: 'rgba(77,142,255,0.2)', color: '#adc6ff' }}>
-              {user?.firstName?.[0]?.toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate leading-tight" style={{ color: '#e1e2ec' }}>
-                {user?.firstName}
-              </p>
-              <p className="text-xs truncate leading-tight" style={{ color: 'var(--text-3)' }}>
-                {user?.email}
-              </p>
-            </div>
-            <button onClick={handleLogout}
-              className="p-1.5 rounded-lg transition-colors"
-              style={{ color: 'var(--text-3)' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#e1e2ec' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-3)' }}
-              title="Logout">
-              <LogOut size={13} />
-            </button>
-          </div>
-        </div>
       </aside>
 
       {/* ── Main content ── */}
-      <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg)' }}>
-        <div className="max-w-5xl mx-auto px-7 py-7">
-          <Outlet />
-        </div>
-      </main>
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
+        <TopBar />
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-5xl mx-auto px-7 py-6">
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
   )
 }

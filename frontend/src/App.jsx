@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
+import { TimeFilterProvider } from './hooks/useTimeFilter'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
@@ -26,7 +27,7 @@ export default function App() {
       <Routes>
         <Route path="/login"    element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+        <Route path="/" element={<PrivateRoute><TimeFilterProvider><Layout /></TimeFilterProvider></PrivateRoute>}>
           <Route index                element={<DashboardPage />} />
           <Route path="upload"        element={<UploadPage />} />
           <Route path="story"         element={<StoryPage />} />

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { txnApi, aiApi } from '../utils/api'
+import { useTimeFilter } from '../hooks/useTimeFilter'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { ArrowDownRight, ArrowUpRight, HelpCircle, AlertTriangle, Info, Flag, FlagOff, Pencil, Trash2, Plus, X } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
-import MonthRangePicker from '../components/MonthRangePicker'
 import AiText from '../components/AiText'
 import AiLoader from '../components/AiLoader'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -119,9 +119,7 @@ const TOOLTIP_STYLE = {
 }
 
 export default function TransactionsPage() {
-  const [months, setMonths]         = useState([])
-  const [startMonth, setStartMonth] = useState('')
-  const [endMonth, setEndMonth]     = useState('')
+  const { startMonth, endMonth } = useTimeFilter()
   const [txns, setTxns]             = useState([])
   const [loading, setLoading]       = useState(false)
   const [search, setSearch]         = useState('')
@@ -135,13 +133,6 @@ export default function TransactionsPage() {
   const [editingTxn, setEditingTxn]       = useState(null)
   const [togglingAnomaly, setTogglingAnomaly] = useState(null)
   const [confirmTxn, setConfirmTxn]       = useState(null)
-
-  useEffect(() => {
-    txnApi.months().then(r => {
-      setMonths(r.data)
-      if (r.data[0]) { setStartMonth(r.data[0]); setEndMonth(r.data[0]) }
-    })
-  }, [])
 
   useEffect(() => {
     if (!startMonth || !endMonth) return
@@ -222,10 +213,6 @@ export default function TransactionsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Transactions</h2>
         <div className="flex items-center gap-3 flex-wrap">
-          {months.length > 0 && (
-            <MonthRangePicker months={months} startMonth={startMonth} endMonth={endMonth}
-              onChange={({ startMonth:s, endMonth:e }) => { setStartMonth(s); setEndMonth(e) }} />
-          )}
           <button onClick={() => { setEditingTxn(null); setModalOpen(true) }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
             style={{ background: 'var(--brand)', color: 'white' }}>

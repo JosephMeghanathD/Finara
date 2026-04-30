@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react'
 import { txnApi, aiApi } from '../utils/api'
+import { useTimeFilter } from '../hooks/useTimeFilter'
 import { AlertTriangle, HelpCircle, ChevronRight, Sparkles, Info, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import AiText from '../components/AiText'
 import AiLoader from '../components/AiLoader'
-import MonthRangePicker from '../components/MonthRangePicker'
 
 export default function AnomaliesPage() {
-  const [months, setMonths]         = useState([])
-  const [startMonth, setStartMonth] = useState('')
-  const [endMonth, setEndMonth]     = useState('')
+  const { startMonth, endMonth } = useTimeFilter()
   const [anomalies, setAnomalies]   = useState([])
   const [loading, setLoading]       = useState(false)
   const [rechecking, setRechecking] = useState(false)
@@ -18,13 +16,6 @@ export default function AnomaliesPage() {
   const [merchantCache, setMerchantCache] = useState({})
   const [merchantLoading, setMerchantLoading] = useState(null)
   const [openMerchant, setOpenMerchant]   = useState(null)
-
-  useEffect(() => {
-    txnApi.months().then(r => {
-      setMonths(r.data)
-      if (r.data[0]) { setStartMonth(r.data[0]); setEndMonth(r.data[0]) }
-    })
-  }, [])
 
   useEffect(() => {
     if (!startMonth || !endMonth) return
@@ -88,10 +79,6 @@ export default function AnomaliesPage() {
             <RefreshCw size={11} className={rechecking ? 'animate-spin' : ''} />
             {rechecking ? 'Rechecking…' : 'Recheck Anomalies'}
           </button>
-          {months.length > 0 && (
-            <MonthRangePicker months={months} startMonth={startMonth} endMonth={endMonth}
-              onChange={({ startMonth:s, endMonth:e }) => { setStartMonth(s); setEndMonth(e) }} />
-          )}
         </div>
       </div>
 

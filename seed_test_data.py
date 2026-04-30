@@ -308,10 +308,12 @@ def main():
     cur.execute("DELETE FROM budgets           WHERE user_id = %s", (user_id,))
     print("Cleared prior data.")
 
-    # ── 3. Anomaly lookup  (year,month,day) → [(desc,merch,amt,cat,reason)] ─
+    # ── 3. Anomaly lookup  (year,month) → [(day,desc,merch,amt,cat,reason)] ─
+    #   Keyed by month so they can be injected inside the monthly loop and
+    #   share the same upload_batch_id as that month's regular transactions.
     anom_lookup: dict = {}
     for ay, am, ad, desc, merch, amt, cat, reason in ANOMALIES:
-        anom_lookup.setdefault((ay, am, ad), []).append((desc, merch, amt, cat, reason))
+        anom_lookup.setdefault((ay, am), []).append((ad, desc, merch, amt, cat, reason))
 
     rows = []   # (date, desc, merch, amount, cat, tx_type, is_anom, score, reason, batch)
 
@@ -324,39 +326,22 @@ def main():
         rows.append((d, desc, merch, amount, cat,
                      "CREDIT", False, None, None, batch or _batch))
 
-    # ── 4A. Generate income (CREDIT) transactions ──────────────────────────
-    #   Bi-weekly on Fridays starting from first Friday ≥ START
-    days_to_friday = (4 - START.weekday()) % 7   # Friday = weekday 4
+    # ── 4. Generate all transactions month by month ────────────────────────
+    #   Income (CREDIT) is generated within each month's batch so that
+    #   creditTotal and debitTotal are correct per batch in the API.
+
+    BONUSES  = {2023: 4_000.00, 2024: 5_000.00, 2025: 5_500.00}
+    REFUNDS  = {
+        (2023, 4): (date(2023, 4, 18), 1_450.00),
+        (2024, 3): (date(2024, 3, 22), 1_820.00),
+        (2025, 4): (date(2025, 4, 11), 1_630.00),
+        (2026, 3): (date(2026, 3, 28), 1_950.00),
+    }
+
+    # First Friday on or after START
+    days_to_friday = (4 - START.weekday()) % 7
     pay_date = START + timedelta(days=days_to_friday)
-    pay_batch = uuid.uuid4().hex[:8]
 
-    while pay_date <= END:
-        amt = paycheck_amount(pay_date)
-        credit(pay_date, "DIR DEP NEXUS SOFTWARE INC", "Nexus Software Inc",
-               amt, "Income", batch=pay_batch)
-        pay_date += timedelta(days=14)
-        if random.random() < 0.05:          # rotate batch ~5% of the time
-            pay_batch = uuid.uuid4().hex[:8]
-
-    # Year-end bonuses (CREDIT)
-    for yr, bonus in [(2023, 4_000.00), (2024, 5_000.00), (2025, 5_500.00)]:
-        bonus_date = date(yr, 12, 20)
-        if bonus_date <= END:
-            credit(bonus_date, "NEXUS SOFTWARE ANNUAL BONUS", "Nexus Software Inc",
-                   bonus, "Income", batch=uuid.uuid4().hex[:8])
-
-    # Annual tax refunds (CREDIT, arrives March-April)
-    for refund_date, amt in [
-        (date(2023, 4, 18), 1_450.00),
-        (date(2024, 3, 22), 1_820.00),
-        (date(2025, 4, 11), 1_630.00),
-        (date(2026, 3, 28), 1_950.00),
-    ]:
-        if refund_date <= END:
-            credit(refund_date, "IRS TAX REFUND", "U.S. Treasury",
-                   amt, "Income", batch=uuid.uuid4().hex[:8])
-
-    # ── 4B. Generate expense (DEBIT) transactions month by month ───────────
     cur_month = START.replace(day=1)
     while cur_month <= END:
         y, m = cur_month.year, cur_month.month
@@ -366,6 +351,26 @@ def main():
         is_holiday = m in {11, 12}
         is_summer  = m in {6, 7, 8}
         is_winter  = m in {12, 1, 2}
+
+        # ── PAYCHECKS falling in this month (same batch as expenses) ──────
+        while pay_date.year == y and pay_date.month == m and pay_date <= me:
+            credit(pay_date, "DIR DEP NEXUS SOFTWARE INC", "Nexus Software Inc",
+                   paycheck_amount(pay_date), "Income")
+            pay_date += timedelta(days=14)
+
+        # ── YEAR-END BONUS ────────────────────────────────────────────────
+        if m == 12 and y in BONUSES:
+            bonus_date = date(y, m, 20)
+            if bonus_date <= END:
+                credit(bonus_date, "NEXUS SOFTWARE ANNUAL BONUS", "Nexus Software Inc",
+                       BONUSES[y], "Income")
+
+        # ── TAX REFUND ────────────────────────────────────────────────────
+        if (y, m) in REFUNDS:
+            refund_date, refund_amt = REFUNDS[(y, m)]
+            if refund_date <= END:
+                credit(refund_date, "IRS TAX REFUND", "U.S. Treasury",
+                       refund_amt, "Income")
 
         # ── RENT ──────────────────────────────────────────────────────────
         # Lease renewal Jul 2024: $2,200 → $2,350
@@ -547,16 +552,14 @@ def main():
             debit(rand_day(y, m, 8, 28), "NATIONAL PARK RECREATION",
                   "Recreation.gov", rnd(28, 75), "Entertainment")
 
+        # ── ANOMALIES for this month (same batch as regular transactions) ───
+        for ad, desc, merch, amt, cat, reason in anom_lookup.get((y, m), []):
+            score = round(random.uniform(0.79, 0.97), 4)
+            debit(date(y, m, ad), desc, merch, amt, cat,
+                  is_anom=True, score=score, reason=reason)
+
         # ── Advance to next month ──────────────────────────────────────────
         cur_month = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
-
-    # ── 4C. Inject pre-defined anomalies ──────────────────────────────────
-    for (ay, am, ad), entries in anom_lookup.items():
-        a_batch = uuid.uuid4().hex[:8]
-        for desc, merch, amt, cat, reason in entries:
-            score = round(random.uniform(0.79, 0.97), 4)
-            debit(date(ay, am, ad), desc, merch, amt, cat,
-                  is_anom=True, score=score, reason=reason, batch=a_batch)
 
     # ── 5. Batch insert ─────────────────────────────────────────────────────
     print(f"Inserting {len(rows)} transactions …")

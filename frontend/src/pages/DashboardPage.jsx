@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { txnApi, reportApi } from '../utils/api'
 import { useAuth } from '../hooks/useAuth'
+import { useTimeFilter } from '../hooks/useTimeFilter'
 import {
   Upload, AlertTriangle, ArrowRight, ArrowDownRight, ArrowUpRight,
   Sparkles, Receipt, MessageCircle, Target, BarChart3, BookOpen,
   TrendingUp, Zap, CalendarDays,
 } from 'lucide-react'
 import { format, parseISO, differenceInCalendarDays, endOfMonth, startOfMonth } from 'date-fns'
-import MonthRangePicker from '../components/MonthRangePicker'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid, Area, AreaChart,
@@ -83,30 +83,24 @@ const CustomDot = ({ cx, cy, r, fill }) => (
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  const [summary, setSummary]             = useState(null)
-  const [recent, setRecent]               = useState([])
-  const [months, setMonths]               = useState([])
-  const [startMonth, setStartMonth]       = useState('')
-  const [endMonth, setEndMonth]           = useState('')
+  const { months, startMonth, endMonth } = useTimeFilter()
+  const [summary, setSummary]               = useState(null)
+  const [recent, setRecent]                 = useState([])
   const [loadingSummary, setLoadingSummary] = useState(false)
   const [loadingRecent, setLoadingRecent]   = useState(false)
   const [trendData, setTrendData]           = useState([])
 
   useEffect(() => {
-    txnApi.months().then(r => {
-      setMonths(r.data)
-      if (r.data.length > 0) { setStartMonth(r.data[0]); setEndMonth(r.data[0]) }
-      if (r.data.length >= 2) {
-        reportApi.list(r.data.slice(0, 12).join(','))
-          .then(rep => setTrendData(
-            (rep.data || [])
-              .map(m => ({ month: m.month.slice(5), total: Math.round(m.total || 0) }))
-              .reverse()
-          ))
-          .catch(() => {})
-      }
-    })
-  }, [])
+    if (months.length >= 2) {
+      reportApi.list(months.slice(0, 12).join(','))
+        .then(rep => setTrendData(
+          (rep.data || [])
+            .map(m => ({ month: m.month.slice(5), total: Math.round(m.total || 0) }))
+            .reverse()
+        ))
+        .catch(() => {})
+    }
+  }, [months])
 
   useEffect(() => {
     if (!startMonth || !endMonth) return
@@ -151,20 +145,14 @@ export default function DashboardPage() {
     <div className="space-y-5">
 
       {/* ── Header ── */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)', fontFamily: 'Manrope, DM Sans, sans-serif' }}>
-            Good {greeting}, {user?.firstName}
-          </h2>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
-            {format(new Date(), 'EEEE, MMMM d, yyyy')}
-            {months.length > 0 && ` · ${months.length} month${months.length !== 1 ? 's' : ''} of data`}
-          </p>
-        </div>
-        {months.length > 0 && (
-          <MonthRangePicker months={months} startMonth={startMonth} endMonth={endMonth}
-            onChange={({ startMonth: s, endMonth: e }) => { setStartMonth(s); setEndMonth(e) }} />
-        )}
+      <div>
+        <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)', fontFamily: 'Manrope, DM Sans, sans-serif' }}>
+          Good {greeting}, {user?.firstName}
+        </h2>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
+          {format(new Date(), 'EEEE, MMMM d, yyyy')}
+          {months.length > 0 && ` · ${months.length} month${months.length !== 1 ? 's' : ''} of data`}
+        </p>
       </div>
 
       {/* ── 6 Stat Cards ── */}

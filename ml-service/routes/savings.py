@@ -36,13 +36,13 @@ def reality_check():
     elif monthly_surplus > 0:
         # Surplus exists but not enough — suggest more time or lower target
         suggested_months   = max(3, math.ceil(goal_amount / monthly_surplus))
-        suggested_target   = round(monthly_surplus * timeframe, 2)
+        suggested_target   = round(monthly_surplus * timeframe)
         needed_monthly_cut = None
     else:
         # Spending exceeds income — tell them exactly what to cut
         suggested_months   = None
         suggested_target   = None
-        needed_monthly_cut = round(abs(monthly_surplus) + required_per_month, 2)
+        needed_monthly_cut = round(abs(monthly_surplus) + required_per_month)
 
     if is_realistic:
         advice_context = f"They have ${monthly_surplus:.0f}/mo surplus, which covers the ${required_per_month:.0f}/mo needed."
@@ -53,11 +53,16 @@ def reality_check():
         advice_context = (f"They're spending ${abs(monthly_surplus):.0f}/mo more than they earn. "
                           f"They must cut ${needed_monthly_cut:.0f}/mo total to both break even and save for this goal.")
 
+    ledger = (f"Monthly income (credit): ${income:.0f} | "
+              f"Typical monthly spending (debit, excl. one-offs): ${total_spend:.0f} | "
+              f"Net: ${monthly_surplus:+.0f}")
+
     prompt = f"""Give practical, encouraging advice for this savings goal. Do NOT repeat the numbers — focus on what action to take.
 
 Goal: ${goal_amount:.0f} in {timeframe} month(s)
+Finances: {ledger}
 {advice_context}
-Top spending: {cat_text}
+Top typical spending categories: {cat_text}
 
 Write 2 sentences: one on the core challenge, one specific actionable tip (name a real category to cut).
 Reply JSON only:
@@ -104,10 +109,11 @@ def create_savings_plan():
     all_disc = sorted(discretionary.items(), key=lambda x: x[1], reverse=True)
     cat_text = "\n".join(f"- {k}: ${v:.0f}/mo" for k, v in all_disc)
 
+    surplus_label = "surplus" if monthly_surplus >= 0 else "deficit"
     prompt = f"""Create a realistic savings plan: ${goal_amount:.0f} in {timeframe} month(s).
 
-Income: ${income:.0f}/mo | Spending: ${total_spend:.0f}/mo | Need to save: ${required_per_month:.0f}/mo
-All discretionary categories:
+Monthly income (credit): ${income:.0f} | Typical monthly spending (debit, excl. one-offs): ${total_spend:.0f} | Net {surplus_label}: ${abs(monthly_surplus):.0f} | Need to save: ${required_per_month:.0f}/mo
+All typical discretionary spending categories:
 {cat_text}
 
 Rules:

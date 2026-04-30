@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { txnApi, aiApi, budgetApi } from '../utils/api'
+import { aiApi, budgetApi } from '../utils/api'
+import { useTimeFilter } from '../hooks/useTimeFilter'
 import { PiggyBank, CheckCircle, XCircle, Sparkles, TrendingDown, ChevronDown, Save } from 'lucide-react'
 import AiText from '../components/AiText'
 import AiLoader from '../components/AiLoader'
 import toast from 'react-hot-toast'
-import MonthRangePicker from '../components/MonthRangePicker'
 
 const inputStyle = {
   background: 'var(--surface-2)', border: '1px solid var(--border)',
@@ -12,9 +12,7 @@ const inputStyle = {
 }
 
 export default function SavingsPage() {
-  const [months, setMonths]         = useState([])
-  const [startMonth, setStartMonth] = useState('')
-  const [endMonth, setEndMonth]     = useState('')
+  const { months, startMonth, endMonth } = useTimeFilter()
   const [form, setForm]             = useState({ goalAmount: '', timeframeMonths: 3 })
   const [check, setCheck]           = useState(null)
   const [plan, setPlan]             = useState(null)
@@ -24,13 +22,8 @@ export default function SavingsPage() {
   const [saveMonth, setSaveMonth]       = useState('')
 
   useEffect(() => {
-    txnApi.months().then(r => {
-      setMonths(r.data)
-      if (r.data[0]) {
-        setStartMonth(r.data[0]); setEndMonth(r.data[0]); setSaveMonth(r.data[0])
-      }
-    })
-  }, [])
+    if (months.length > 0 && !saveMonth) setSaveMonth(months[0])
+  }, [months])
 
   const payload = () => ({ ...form, startMonth, endMonth })
 
@@ -112,17 +105,6 @@ export default function SavingsPage() {
           </div>
         </div>
 
-        {months.length > 0 && (
-          <div>
-            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-2)' }}>Base on which spending period?</label>
-            <MonthRangePicker
-              months={months}
-              startMonth={startMonth}
-              endMonth={endMonth}
-              onChange={({ startMonth: s, endMonth: e }) => { setStartMonth(s); setEndMonth(e) }}
-            />
-          </div>
-        )}
 
         <div className="flex gap-3 pt-1">
           <button onClick={realityCheck} disabled={loadingCheck || !form.goalAmount}
