@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import com.finara.config.TimingContext;
 import java.math.BigDecimal;
 import java.util.*;
 
@@ -36,6 +37,7 @@ public class BudgetService {
     @SuppressWarnings("unchecked")
     public Map<String, Object> getBudgetVsActual(Long userId, String month, boolean includeAnalysis) {
         // Get saved budgets
+        long dbStart = System.currentTimeMillis();
         List<Budget> budgets = budgetRepository.findByUserIdAndMonth(userId, month);
         Map<String, Double> budgetMap = new LinkedHashMap<>();
         budgets.forEach(b -> budgetMap.put(b.getCategory(), b.getBudgetAmount().doubleValue()));
@@ -52,6 +54,7 @@ public class BudgetService {
 
         Double income = transactionRepository.getCreditTotalForRange(userId, month, month);
         double incomeVal = income != null ? income : 0.0;
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         if (budgetMap.isEmpty() || !includeAnalysis) {
             Map<String, Object> result = new HashMap<>();
@@ -70,7 +73,9 @@ public class BudgetService {
         body.put("month",  month);
         body.put("income", incomeVal);
 
+        long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/budget-vs-actual", body, Map.class);
+        TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
 
         Map<String, Object> result = new HashMap<>();
         result.put("month",  month);
@@ -89,6 +94,7 @@ public class BudgetService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         // Replace existing budgets for this month
+        long dbStart = System.currentTimeMillis();
         budgetRepository.deleteByUserIdAndMonth(userId, req.getMonth());
 
         List<Budget> saved = new ArrayList<>();
@@ -101,6 +107,7 @@ public class BudgetService {
                     .build();
             saved.add(budgetRepository.save(b));
         });
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         return Map.of(
                 "month",   req.getMonth(),

@@ -1,9 +1,12 @@
 package com.finara.service;
 
+import com.finara.config.TimingContext;
 import com.finara.dto.ai.ChatRequest;
 import com.finara.dto.ai.SavingsGoalRequest;
+import com.finara.model.FinancialReport;
 import com.finara.model.Transaction;
 import com.finara.model.User;
+import com.finara.repository.FinancialReportRepository;
 import com.finara.repository.TransactionRepository;
 import com.finara.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +30,7 @@ public class AiService {
 
     private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
+    private final FinancialReportRepository financialReportRepository;
 
     @Qualifier("mlRestTemplate")
     private final RestTemplate mlRestTemplate;
@@ -35,7 +39,7 @@ public class AiService {
 
     @Cacheable(value = "stories", key = "#userId + '_' + #startMonth + '_' + (#endMonth != null ? #endMonth : #startMonth)")
     @SuppressWarnings("unchecked")
-    public Map<String, String> generateStory(Long userId, String startMonth, String endMonth) {
+    public Map<String, Object> generateStory(Long userId, String startMonth, String endMonth) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -48,16 +52,32 @@ public class AiService {
                 "summary", summary
         );
 
+        long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/story", body, Map.class);
+        TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
         String story = resp != null ? (String) resp.get("story") : "Unable to generate story.";
-        return Map.of("story", story, "startMonth", startMonth, "endMonth", end);
+
+        // Persist so future visits load instantly via GET /api/reports/{key}
+        String reportKey = startMonth.equals(end) ? startMonth : startMonth + "~" + end;
+        FinancialReport report = financialReportRepository
+                .findByUserIdAndMonth(userId, reportKey)
+                .orElseGet(() -> {
+                    FinancialReport r = new FinancialReport();
+                    r.setUser(user);
+                    r.setMonth(reportKey);
+                    return r;
+                });
+        report.setNarrativeStory(story);
+        financialReportRepository.save(report);
+
+        return Map.<String, Object>of("story", story, "startMonth", startMonth, "endMonth", end);
     }
 
     // ─── UC9: Explain Anomaly ─────────────────────────────────────────────────
 
     @Cacheable(value = "anomaly-explanations", key = "#transactionId")
     @SuppressWarnings("unchecked")
-    public Map<String, String> explainAnomaly(Long userId, Long transactionId) {
+    public Map<String, Object> explainAnomaly(Long userId, Long transactionId) {
         Transaction txn = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new RuntimeException("Transaction not found"));
 
@@ -67,8 +87,10 @@ public class AiService {
 
         // Calculate user's average spend in that category
         String month = txn.getTransactionDate().toString().substring(0, 7);
+        long dbStart = System.currentTimeMillis();
         List<Object[]> catSummary = transactionRepository
                 .getCategorySummaryForMonth(userId, month);
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
         double avgInCat = catSummary.stream()
                 .filter(r -> txn.getCategory() != null && txn.getCategory().equals(r[0]))
                 .mapToDouble(r -> ((Number) r[1]).doubleValue())
@@ -87,9 +109,11 @@ public class AiService {
                 "user_context",  Map.of("avg_category_spend", avgInCat)
         );
 
+        long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/explain-anomaly", body, Map.class);
+        TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
         String explanation = resp != null ? (String) resp.get("explanation") : "Unable to explain.";
-        return Map.of("explanation", explanation);
+        return Map.<String, Object>of("explanation", explanation);
     }
 
     // ─── UC10: Reality Check ──────────────────────────────────────────────────
@@ -104,8 +128,10 @@ public class AiService {
                 : (req.getMonth() != null ? req.getMonth() : now);
         String endMonth   = req.getEndMonth()   != null ? req.getEndMonth()   : startMonth;
 
+        long dbStart = System.currentTimeMillis();
         Map<String, Double> categories = getCategoryTotals(userId, startMonth, endMonth);
         double income = getActualMonthlyIncome(userId, startMonth, endMonth, user);
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         Map<String, Object> body = Map.of(
                 "goal_amount",       req.getGoalAmount(),
@@ -114,7 +140,9 @@ public class AiService {
                 "monthly_spending",  categories
         );
 
+        long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/reality-check", body, Map.class);
+        TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
         return resp != null ? resp : Map.of("error", "Service unavailable");
     }
 
@@ -130,8 +158,10 @@ public class AiService {
                 : (req.getMonth() != null ? req.getMonth() : now);
         String endMonth   = req.getEndMonth()   != null ? req.getEndMonth()   : startMonth;
 
+        long dbStart = System.currentTimeMillis();
         Map<String, Double> categories = getCategoryTotals(userId, startMonth, endMonth);
         double income = getActualMonthlyIncome(userId, startMonth, endMonth, user);
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         Map<String, Object> body = Map.of(
                 "goal_amount",       req.getGoalAmount(),
@@ -140,14 +170,16 @@ public class AiService {
                 "monthly_spending",  categories
         );
 
+        long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/plan", body, Map.class);
+        TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
         return resp != null ? resp : Map.of("error", "Service unavailable");
     }
 
     // ─── UC12: Chat ───────────────────────────────────────────────────────────
 
     @SuppressWarnings("unchecked")
-    public Map<String, String> chat(Long userId, ChatRequest req) {
+    public Map<String, Object> chat(Long userId, ChatRequest req) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -163,9 +195,11 @@ public class AiService {
         body.put("context",  context);
         body.put("history",  req.getHistory() != null ? req.getHistory() : List.of());
 
+        long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/chat", body, Map.class);
+        TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
         String reply = resp != null ? (String) resp.get("reply") : "I'm unable to respond right now.";
-        return Map.of("reply", reply);
+        return Map.<String, Object>of("reply", reply);
     }
 
     // ─── UC13: Merchant Explainer ─────────────────────────────────────────────
@@ -174,7 +208,9 @@ public class AiService {
     @SuppressWarnings("unchecked")
     public Map<String, Object> explainMerchant(String merchantName) {
         Map<String, Object> body = Map.of("merchant_name", merchantName);
+        long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/explain-merchant", body, Map.class);
+        TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
         return resp != null ? resp : Map.of("explanation", "Unknown merchant", "likely_category", "Other");
     }
 
@@ -188,6 +224,7 @@ public class AiService {
         LocalDate monday = weekParam != null ? now : now.with(DayOfWeek.MONDAY);
         LocalDate sunday = monday.plusDays(6);
 
+        long dbStart = System.currentTimeMillis();
         List<Transaction> weekTxns = transactionRepository
                 .findByUserIdAndTransactionDateBetweenOrderByTransactionDateDesc(
                         userId, monday, sunday);
@@ -213,6 +250,8 @@ public class AiService {
         List<Transaction> pastTxns = transactionRepository
                 .findByUserIdAndTransactionDateBetweenOrderByTransactionDateDesc(
                         userId, fourWeeksAgo, monday.minusDays(1));
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
+
         double avgWeek = pastTxns.stream()
                 .filter(t -> !"CREDIT".equals(t.getTransactionType()))
                 .filter(t -> !"Transfer".equals(t.getCategory()))
@@ -228,14 +267,18 @@ public class AiService {
                 )
         );
 
+        long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/coach", body, Map.class);
+        TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
         return resp != null ? resp : Map.of("tips", List.of("No tips available right now."));
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private Map<String, Object> buildRangeSummary(Long userId, String startMonth, String endMonth, User user) {
+        long dbStart = System.currentTimeMillis();
         List<Transaction> txns = transactionRepository.findByUserIdAndMonthRange(userId, startMonth, endMonth);
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         // Spending: DEBIT only
         Map<String, Double> categories = txns.stream()

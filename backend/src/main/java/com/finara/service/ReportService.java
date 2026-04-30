@@ -1,5 +1,8 @@
 package com.finara.service;
 
+import com.finara.config.TimingContext;
+import com.finara.model.FinancialReport;
+import com.finara.repository.FinancialReportRepository;
 import com.finara.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +21,7 @@ import java.util.Set;
 public class ReportService {
 
     private final TransactionRepository transactionRepository;
+    private final FinancialReportRepository financialReportRepository;
 
     @Qualifier("mlRestTemplate")
     private final RestTemplate mlRestTemplate;
@@ -35,6 +39,7 @@ public class ReportService {
 
     @Cacheable(value = "reports", key = "#userId + '_' + #month")
     public Map<String, Object> getReport(Long userId, String month) {
+        long dbStart = System.currentTimeMillis();
         List<Object[]> rows = transactionRepository.getCategorySummaryForMonth(userId, month);
 
         // Exclude internal tracking categories from spending view
@@ -52,6 +57,7 @@ public class ReportService {
 
         Double income = transactionRepository.getCreditTotalForRange(userId, month, month);
         double incomeVal = income != null ? income : 0.0;
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("month",      month);
@@ -59,6 +65,17 @@ public class ReportService {
         result.put("total",      total);
         result.put("income",     incomeVal);
         result.put("net",        incomeVal - total);
+        return result;
+    }
+
+    public Map<String, Object> getReportWithNarrative(Long userId, String month) {
+        Map<String, Object> result = new LinkedHashMap<>(getReport(userId, month));
+        long dbStart = System.currentTimeMillis();
+        financialReportRepository.findByUserIdAndMonth(userId, month)
+                .map(FinancialReport::getNarrativeStory)
+                .filter(n -> n != null && !n.isBlank())
+                .ifPresent(narrative -> result.put("narrative", narrative));
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
         return result;
     }
 
@@ -80,6 +97,7 @@ public class ReportService {
         }
 
         // Build monthly totals per category
+        long dbStart = System.currentTimeMillis();
         Map<String, List<Double>> monthlyTotals = new LinkedHashMap<>();
         for (String month : historyMonths) {
             List<Object[]> rows = transactionRepository.getCategorySummaryForMonth(userId, month);
@@ -89,13 +107,16 @@ public class ReportService {
                 monthlyTotals.computeIfAbsent(cat, k -> new ArrayList<>()).add(amt);
             }
         }
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         Map<String, Object> body = Map.of(
                 "monthly_totals", monthlyTotals,
                 "periods", 1
         );
 
+        long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ml/forecast", body, Map.class);
+        TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
         return resp != null ? resp : Map.of("error", "Forecast service unavailable");
     }
 }

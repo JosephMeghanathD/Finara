@@ -4,6 +4,7 @@ Accepts a bank statement PDF, extracts transactions, and returns them
 in the same format as a CSV upload so the Java backend can process them identically.
 """
 
+import time
 from flask import Blueprint, request, jsonify
 from utils.pdf_parser import parse_pdf_statement, parse_pdf_with_tables
 
@@ -42,8 +43,10 @@ def parse_pdf():
         return jsonify({"error": "Empty file"}), 400
 
     try:
+        t0 = time.time()
         # Try table extraction first, fall back to text parsing
         result = parse_pdf_with_tables(file_bytes)
+        parse_ms = round((time.time() - t0) * 1000)
 
         if not result["transactions"]:
             return jsonify({
@@ -56,6 +59,7 @@ def parse_pdf():
             "transactions": result["transactions"],
             "summary":      result["summary"],
             "count":        len(result["transactions"]),
+            "timing":       {"total_ms": parse_ms},
         })
 
     except Exception as e:

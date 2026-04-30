@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.finara.config.TimingContext;
 import jakarta.transaction.Transactional;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -135,7 +136,9 @@ public class TransactionService {
         // Run same ML pipeline as CSV
         List<Transaction> categorized   = categorize(parsed);
         List<Transaction> withAnomalies = detectAnomalies(categorized);
+        long dbStart = System.currentTimeMillis();
         transactionRepository.saveAll(withAnomalies);
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         long flagged = withAnomalies.stream().filter(t -> Boolean.TRUE.equals(t.getIsAnomaly())).count();
 
@@ -178,7 +181,9 @@ public class TransactionService {
         List<Transaction> withAnomalies = detectAnomalies(categorized);
 
         // Step 3: Save all
+        long dbStart = System.currentTimeMillis();
         transactionRepository.saveAll(withAnomalies);
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         long flagged = withAnomalies.stream().filter(t -> Boolean.TRUE.equals(t.getIsAnomaly())).count();
 
@@ -320,8 +325,10 @@ public class TransactionService {
                     .collect(Collectors.toList());
 
             Map<String, Object> body = Map.of("transactions", payload);
+            long mlStart = System.currentTimeMillis();
             Map<String, Object> resp = mlRestTemplate.postForObject(
                     "/api/ml/categorize", body, Map.class);
+            TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
 
             if (resp == null) return transactions;
 
@@ -366,8 +373,10 @@ public class TransactionService {
                     .collect(Collectors.toList());
 
             Map<String, Object> body = Map.of("transactions", payload);
+            long mlStart = System.currentTimeMillis();
             Map<String, Object> resp = mlRestTemplate.postForObject(
                     "/api/ml/anomaly", body, Map.class);
+            TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
 
             if (resp == null) return transactions;
 
@@ -391,6 +400,8 @@ public class TransactionService {
     @Cacheable(value = "summaries", key = "#userId + '_' + #startMonth + '_' + (#endMonth != null ? #endMonth : #startMonth)")
     public Map<String, Object> getMonthlySummary(Long userId, String startMonth, String endMonth) {
         String end = endMonth != null ? endMonth : startMonth;
+
+        long dbStart = System.currentTimeMillis();
         List<Object[]> rows = transactionRepository.getCategorySummaryForRange(userId, startMonth, end);
         Map<String, Double> categories = new LinkedHashMap<>();
         double total = 0;
@@ -412,6 +423,7 @@ public class TransactionService {
                 .collect(Collectors.toList());
 
         Double creditTotal = transactionRepository.getCreditTotalForRange(userId, startMonth, end);
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         return Map.of(
                 "startMonth",   startMonth,
@@ -444,6 +456,7 @@ public class TransactionService {
         @CacheEvict(value = "anomaly-explanations", allEntries = true),
     })
     public Map<String, Object> recheckAnomalies(Long userId, String startMonth, String endMonth) {
+        long dbStart = System.currentTimeMillis();
         List<Transaction> txns;
         if (startMonth != null && endMonth != null) {
             txns = transactionRepository.findByUserIdAndMonthRange(userId, startMonth, endMonth);
@@ -452,10 +465,13 @@ public class TransactionService {
         } else {
             txns = transactionRepository.findByUserIdOrderByTransactionDateDesc(userId);
         }
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
         if (txns.isEmpty()) return Map.of("checked", 0, "flagged", 0);
 
         List<Transaction> rechecked = detectAnomalies(txns);
+        dbStart = System.currentTimeMillis();
         transactionRepository.saveAll(rechecked);
+        TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
         long flagged = rechecked.stream().filter(t -> Boolean.TRUE.equals(t.getIsAnomaly())).count();
         return Map.of("checked", rechecked.size(), "flagged", flagged);

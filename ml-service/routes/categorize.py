@@ -4,6 +4,7 @@ ML model that classifies transactions into spending categories.
 Uses a TF-IDF + Logistic Regression pipeline trained on merchant names.
 """
 
+import time
 from flask import Blueprint, request, jsonify
 import pandas as pd
 import pickle
@@ -25,6 +26,7 @@ def categorize_transactions():
     if not transactions:
         return jsonify({"error": "No transactions provided"}), 400
 
+    t0 = time.time()
     model = get_categorizer()
     results = []
 
@@ -38,4 +40,5 @@ def categorize_transactions():
             "confidence": round(confidence, 3)
         })
 
-    return jsonify({"results": results})
+    total_ms = round((time.time() - t0) * 1000)
+    return jsonify({"results": results, "timing": {"total_ms": total_ms}})

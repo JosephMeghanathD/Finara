@@ -3,6 +3,7 @@ Route: /api/ml/anomaly
 Isolation Forest anomaly detection on transaction amounts + time patterns.
 """
 
+import time
 from flask import Blueprint, request, jsonify
 import pandas as pd
 import numpy as np
@@ -80,13 +81,16 @@ def detect():
     if not transactions:
         return jsonify({"error": "No transactions provided"}), 400
 
+    t0 = time.time()
     results = detect_anomalies(transactions)
     flagged = sum(1 for r in results if r["is_anomaly"])
+    total_ms = round((time.time() - t0) * 1000)
 
     return jsonify({
         "results": results,
         "summary": {
             "total":   len(results),
             "flagged": flagged,
-        }
+        },
+        "timing": {"total_ms": total_ms},
     })

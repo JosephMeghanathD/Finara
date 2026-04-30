@@ -3,6 +3,7 @@ Route: /api/ml/forecast
 ARIMA / exponential smoothing forecast for next month's spending per category.
 """
 
+import time
 from flask import Blueprint, request, jsonify
 import pandas as pd
 import numpy as np
@@ -82,6 +83,7 @@ def forecast():
     if not monthly_totals:
         return jsonify({"error": "monthly_totals is required"}), 400
 
+    t0 = time.time()
     forecasts = {}
     for category, amounts in monthly_totals.items():
         forecasts[category] = forecast_category(amounts, periods)
@@ -89,5 +91,6 @@ def forecast():
     # Total forecast
     all_totals = [sum(v) for v in zip(*monthly_totals.values())]
     forecasts["_total"] = forecast_category(all_totals, periods)
+    total_ms = round((time.time() - t0) * 1000)
 
-    return jsonify({"forecasts": forecasts})
+    return jsonify({"forecasts": forecasts, "timing": {"total_ms": total_ms}})

@@ -39,7 +39,7 @@ public class ReportAndBudgetController {
             HttpServletRequest request) {
 
         Long userId = (Long) request.getAttribute("userId");
-        return ResponseEntity.ok(reportService.getReport(userId, month));
+        return ResponseEntity.ok(reportService.getReportWithNarrative(userId, month));
     }
 
     // ─── UC6: Forecast ───────────────────────────────────────────────────────

@@ -25,7 +25,7 @@ public class AiController {
      * POST /api/ai/story  { "month": "2025-07" }
      */
     @PostMapping("/story")
-    public ResponseEntity<Map<String, String>> generateStory(
+    public ResponseEntity<Map<String, Object>> generateStory(
             @RequestBody Map<String, String> body,
             HttpServletRequest request) {
 
@@ -44,7 +44,7 @@ public class AiController {
      * POST /api/ai/explain-anomaly  { "transactionId": 42 }
      */
     @PostMapping("/explain-anomaly")
-    public ResponseEntity<Map<String, String>> explainAnomaly(
+    public ResponseEntity<Map<String, Object>> explainAnomaly(
             @RequestBody Map<String, Long> body,
             HttpServletRequest request) {
 
@@ -84,7 +84,7 @@ public class AiController {
      * POST /api/ai/chat  { "message": "...", "history": [...], "month": "2025-07" }
      */
     @PostMapping("/chat")
-    public ResponseEntity<Map<String, String>> chat(
+    public ResponseEntity<Map<String, Object>> chat(
             @RequestBody ChatRequest req,
             HttpServletRequest request) {
 

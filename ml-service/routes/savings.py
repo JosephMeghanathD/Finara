@@ -4,6 +4,7 @@ Gemma-powered savings plan generation and goal validation.
 """
 
 import math
+import time
 from flask import Blueprint, request, jsonify
 from utils.gemma_client import ask_gemma_json
 
@@ -71,11 +72,14 @@ Reply JSON only:
   "biggest_opportunity": "category name"
 }}"""
 
+    t0 = time.time()
     result = ask_gemma_json(prompt, system=ADVISOR_SYSTEM, num_ctx=1024, num_predict=180)
+    gemma_ms = round((time.time() - t0) * 1000)
     result["is_realistic"]       = is_realistic
     result["suggested_months"]   = suggested_months
     result["suggested_target"]   = suggested_target
     result["needed_monthly_cut"] = needed_monthly_cut
+    result["timing"]             = {"gemma_ms": gemma_ms, "total_ms": gemma_ms}
     return jsonify(result)
 
 
@@ -139,7 +143,9 @@ Reply JSON:
 }}"""
 
     try:
+        t0 = time.time()
         result = ask_gemma_json(prompt, system=ADVISOR_SYSTEM, num_ctx=1536, num_predict=600)
+        gemma_ms = round((time.time() - t0) * 1000)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -180,6 +186,7 @@ Reply JSON:
         if cat:
             all_budgets[cat] = cut["target_monthly"]
     result["all_budgets"] = all_budgets
+    result["timing"]      = {"gemma_ms": gemma_ms, "total_ms": gemma_ms}
 
     return jsonify(result)
 
@@ -225,7 +232,9 @@ def budget_vs_actual():
 Write a 2-sentence summary. Reference income and net cash flow if available. Acknowledge wins, flag overruns directly.
 Reply JSON: {{"analysis": "..."}}"""
 
+    t0 = time.time()
     result = ask_gemma_json(prompt, system=ADVISOR_SYSTEM, num_ctx=768, num_predict=160)
+    gemma_ms = round((time.time() - t0) * 1000)
     return jsonify({
         **result,
         "over_budget":  over_budget,
@@ -233,5 +242,6 @@ Reply JSON: {{"analysis": "..."}}"""
         "breakdown":    [{"category": cat,
                           "budget":   budget.get(cat, 0),
                           "actual":   actual.get(cat, 0)}
-                         for cat in all_cats]
+                         for cat in all_cats],
+        "timing":       {"gemma_ms": gemma_ms, "total_ms": gemma_ms},
     })

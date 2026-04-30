@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { aiApi } from '../utils/api'
+import { aiApi, reportApi } from '../utils/api'
 import { useTimeFilter } from '../hooks/useTimeFilter'
 import { BookOpen, Sparkles, RefreshCw, MessageCircle, Zap } from 'lucide-react'
 import AiText from '../components/AiText'
@@ -25,12 +25,30 @@ export default function StoryPage() {
   const [story, setStory]   = useState('')
   const [loading, setLoading] = useState(false)
   const [timing, setTiming] = useState(null)
+  const [cached, setCached] = useState(false)
+
+  // Load persisted narrative whenever the selected period changes
+  useEffect(() => {
+    if (!startMonth || !endMonth) return
+    const key = startMonth === endMonth ? startMonth : `${startMonth}~${endMonth}`
+    reportApi.get(key).then(r => {
+      if (r.data?.narrative) {
+        setStory(r.data.narrative)
+        setCached(true)
+        setTiming(null)
+      } else {
+        setStory('')
+        setCached(false)
+      }
+    }).catch(() => {})
+  }, [startMonth, endMonth])
 
   const generate = async (refresh = false) => {
     if (!startMonth || !endMonth) return
     setLoading(true)
     setStory('')
     setTiming(null)
+    setCached(false)
     try {
       const { data } = await aiApi.story(startMonth, endMonth, refresh)
       setStory(data.story)
@@ -61,7 +79,9 @@ export default function StoryPage() {
           className="btn-primary flex items-center gap-2 flex-shrink-0">
           {loading
             ? <><RefreshCw size={15} className="animate-spin" /> Writing…</>
-            : <><Sparkles size={15} /> Generate</>}
+            : cached
+              ? <><RefreshCw size={15} /> Regenerate</>
+              : <><Sparkles size={15} /> Generate</>}
         </button>
       </div>
 
@@ -81,7 +101,13 @@ export default function StoryPage() {
                 </p>
                 <div className="flex items-center gap-2 mt-0.5">
                   <p className="text-xs" style={{ color: 'var(--text-3)' }}>Finara · powered by Gemma 3</p>
-                  {timing && (
+                  {cached && (
+                    <span className="text-xs px-1.5 py-0.5 rounded-full"
+                      style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--brand)' }}>
+                      saved
+                    </span>
+                  )}
+                  {timing && !cached && (
                     <span className="text-xs flex items-center gap-0.5 px-1.5 py-0.5 rounded-full"
                       style={{ background: 'rgba(16,185,129,0.08)', color: '#34d399' }}>
                       <Zap size={9} /> {(timing / 1000).toFixed(1)}s

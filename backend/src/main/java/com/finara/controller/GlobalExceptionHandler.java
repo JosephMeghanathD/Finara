@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<Map<String, String>> handleRuntime(RuntimeException ex) {
+    public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
         HttpStatus status = HttpStatus.BAD_REQUEST;
         String msg = ex.getMessage();
 
@@ -21,20 +21,20 @@ public class GlobalExceptionHandler {
         if (msg != null && msg.contains("Access denied")) status = HttpStatus.FORBIDDEN;
         if (msg != null && msg.contains("Invalid credentials")) status = HttpStatus.UNAUTHORIZED;
 
-        return ResponseEntity.status(status).body(Map.of("message", msg != null ? msg : "An error occurred"));
+        return ResponseEntity.status(status).body(Map.<String, Object>of("message", msg != null ? msg : "An error occurred"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {
+    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         String errors = ex.getBindingResult().getFieldErrors().stream()
                 .map(e -> e.getField() + ": " + e.getDefaultMessage())
                 .collect(Collectors.joining(", "));
-        return ResponseEntity.badRequest().body(Map.of("message", errors));
+        return ResponseEntity.badRequest().body(Map.<String, Object>of("message", errors));
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, String>> handleGeneric(Exception ex) {
+    public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("message", "Internal server error: " + ex.getMessage()));
+                .body(Map.<String, Object>of("message", "Internal server error: " + ex.getMessage()));
     }
 }

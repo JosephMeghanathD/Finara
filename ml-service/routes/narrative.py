@@ -3,6 +3,7 @@ Route: /api/ai/narrative
 Gemma-powered financial storytelling + Q&A + merchant explainer.
 """
 
+import re
 import time
 from flask import Blueprint, request, jsonify
 from utils.gemma_client import ask_gemma, ask_gemma_json, ask_gemma_chat
@@ -27,6 +28,36 @@ Use plain English. Cite exact numbers from the user's data. Be honest and encour
 
 # In-process cache for merchant explanations — same name always yields same result
 _merchant_cache: dict = {}
+
+_CHART_KEYWORDS = ["pie chart", "bar chart", "breakdown", "spending chart", "chart here", "visualize", "visualization"]
+_PLACEHOLDER_RE = re.compile(
+    r'\[(?:Imagine |Here is |Here\'s )?(?:a |an |your )?(?:pie|bar|spending|financial|category)[\w\s]*chart[^\]]*\]',
+    re.IGNORECASE,
+)
+
+def _extract_chart(reply: str, context: dict) -> tuple[str, dict | None]:
+    """Strip chart placeholders from reply and build real chart data if intent detected."""
+    reply_lower = reply.lower()
+    has_intent = any(kw in reply_lower for kw in _CHART_KEYWORDS)
+    categories = context.get("categories", {})
+
+    if not has_intent or not categories:
+        return reply, None
+
+    clean_reply = _PLACEHOLDER_RE.sub("", reply).strip()
+    # Collapse any double newlines left by removal
+    clean_reply = re.sub(r'\n{3,}', '\n\n', clean_reply)
+
+    data = [
+        {"name": k, "value": round(v, 2)}
+        for k, v in sorted(categories.items(), key=lambda x: x[1], reverse=True)
+        if v > 0
+    ]
+    if not data:
+        return reply, None
+
+    chart = {"type": "pie", "title": "Spending Breakdown", "data": data}
+    return clean_reply, chart
 
 
 @narrative_bp.route("/story", methods=["POST"])
@@ -86,7 +117,7 @@ Be specific, use the exact numbers above."""
                       num_ctx=1536, num_predict=450)
     gemma_ms = round((time.time() - t0) * 1000)
 
-    return jsonify({"story": story, "timing": {"gemma_ms": gemma_ms}})
+    return jsonify({"story": story, "timing": {"gemma_ms": gemma_ms, "total_ms": gemma_ms}})
 
 
 @narrative_bp.route("/explain-anomaly", methods=["POST"])
@@ -109,7 +140,7 @@ Be specific and friendly. Tell them what to check."""
                             num_ctx=768, num_predict=180)
     gemma_ms = round((time.time() - t0) * 1000)
 
-    return jsonify({"explanation": explanation, "timing": {"gemma_ms": gemma_ms}})
+    return jsonify({"explanation": explanation, "timing": {"gemma_ms": gemma_ms, "total_ms": gemma_ms}})
 
 
 @narrative_bp.route("/explain-merchant", methods=["POST"])
@@ -127,7 +158,7 @@ Reply JSON: {{"explanation": "one sentence what this charge is", "likely_categor
     result = ask_gemma_json(prompt, num_ctx=512, num_predict=120)
     gemma_ms = round((time.time() - t0) * 1000)
 
-    result["timing"] = {"gemma_ms": gemma_ms}
+    result["timing"] = {"gemma_ms": gemma_ms, "total_ms": gemma_ms}
     _merchant_cache[merchant] = result
     return jsonify(result)
 
@@ -163,8 +194,10 @@ def chat():
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": message})
 
+    t0 = time.time()
     reply = ask_gemma_chat(messages, temperature=0.7, num_ctx=2048, num_predict=400)
-    return jsonify({"reply": reply})
+    gemma_ms = round((time.time() - t0) * 1000)
+    return jsonify({"reply": reply, "timing": {"gemma_ms": gemma_ms, "total_ms": gemma_ms}})
 
 
 @narrative_bp.route("/coach", methods=["POST"])
@@ -200,5 +233,5 @@ Reply JSON: {{"tips": ["tip1", "tip2", "tip3"]}}"""
     result = ask_gemma_json(prompt, num_ctx=768, num_predict=240)
     gemma_ms = round((time.time() - t0) * 1000)
 
-    result["timing"] = {"gemma_ms": gemma_ms}
+    result["timing"] = {"gemma_ms": gemma_ms, "total_ms": gemma_ms}
     return jsonify(result)
