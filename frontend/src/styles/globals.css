@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design system: Finara Narrative Intelligence ─────────────────────────── */
+:root {
+  /* Primary action color (vivid blue - for buttons, active states) */
+  --brand:       #4d8eff;
+  --brand-dark:  #3b7af0;
+  --brand-light: rgba(77,142,255,0.12);
+
+  /* Surfaces (dark, layered) */
+  --bg:          #10131a;   /* deepest background */
+  --surface:     #1d2027;   /* card / panel */
+  --surface-2:   #272a31;   /* elevated card, hover state */
+  --surface-3:   #32353c;   /* highest elevation */
+
+  /* Borders */
+  --border:      rgba(255,255,255,0.08);
+  --border-2:    rgba(255,255,255,0.14);
+
+  /* Text */
+  --text:        #e1e2ec;   /* primary */
+  --text-2:      #c2c6d6;   /* secondary */
+  --text-3:      #8c909f;   /* muted / label */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'DM Sans', 'Manrope', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Manrope', 'DM Sans', sans-serif;
+}
+
+.narrative-text {
+  font-family: 'Plus Jakarta Sans', 'DM Sans', sans-serif;
+  font-size: 1rem;
+  line-height: 1.85;
+  color: var(--text-2);
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────────── */
+.btn-primary {
+  background: var(--brand);
+  color: white;
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.2s;
+  display: inline-flex;
+  align-items: center;
+  box-shadow: 0 0 0 rgba(77,142,255,0);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--brand-dark);
+  box-shadow: 0 0 18px rgba(77,142,255,0.35);
+}
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-2);
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-2);
+}
+.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Inputs ─────────────────────────────────────────────────────────────────── */
+input, select, textarea {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input::placeholder, textarea::placeholder {
+  color: var(--text-3);
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(77,142,255,0.18);
+}
+select option {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* ── AiLoader animations ────────────────────────────────────────────────────── */
+@keyframes aiPulseIcon {
+  0%, 100% { transform: scale(1) rotate(0deg);   opacity: 1;    }
+  25%       { transform: scale(1.12) rotate(8deg); opacity: 0.85; }
+  75%       { transform: scale(0.92) rotate(-5deg); opacity: 0.9; }
+}
+.ai-pulse-icon { animation: aiPulseIcon 2.6s ease-in-out infinite; }
+
+@keyframes aiOrbit {
+  from { transform: rotate(0deg);   opacity: 0.6; }
+  50%  { opacity: 0.15; }
+  to   { transform: rotate(360deg); opacity: 0.6; }
+}
+.ai-orbit-ring { animation: aiOrbit 4s linear infinite; }
+
+/* Progress bar — fast for compact, slow for full loaders */
+@keyframes aiBar {
+  0%   { width: 0%;   }
+  20%  { width: 40%;  }
+  50%  { width: 68%;  }
+  80%  { width: 82%;  }
+  100% { width: 86%;  }
+}
+.ai-bar      { animation: aiBar  8s ease-out forwards; }
+.ai-bar-slow { animation: aiBar 45s ease-out forwards; }
+
+/* Fade-in for cycling message text */
+@keyframes aiMsgIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.ai-msg-in { animation: aiMsgIn 0.35s ease; }
+
+/* ── Chat animations ────────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.chat-message { animation: fadeInUp 0.2s ease; }
+
+@keyframes pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+.thinking-dot { animation: pulse 1.2s infinite; }
+.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── Table row hover ────────────────────────────────────────────────────────── */
+.tr-hover:hover { background: var(--surface-2); }
+
+/* ── Glassmorphism glow ─────────────────────────────────────────────────────── */
+.glow-brand {
+  box-shadow: 0 0 24px rgba(77,142,255,0.2);
+}

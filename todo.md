@@ -1,0 +1,10 @@
+- [x] Weekly coach need to be stored somewhere and only refreshed when user clicks on refresh
+- [x] Add line graphs in spending forcast, dashboard and compare
+- [x] In dashboard top row numbers like money out money in net flow etc are not showing up completely need to change them so that we can see the whole amount
+- [x] In add options to mark a transaction as anomaly and mark a existing transaction as not an anomaly 
+- [x] Add option to add, edit and delete a transaction
+- [x] In pie charts when i hover its the tooltip is dark and text is also dark so i cant read it make it so that its easier to read 
+- [x] Add a feature in chat which explains all the features in finara
+- [x] Train the gemma model to understand finara so that it can answer any questions about finara
+- [x] Cache of My Financial story give option to refresh
+- [x] add timing stats in the response to show much time was spent in each service 
