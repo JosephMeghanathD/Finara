@@ -7,7 +7,7 @@ import AiText from '../components/AiText'
 import AiLoader from '../components/AiLoader'
 
 export default function AnomaliesPage() {
-  const { startMonth, endMonth } = useTimeFilter()
+  const { startDate, endDate } = useTimeFilter()
   const [anomalies, setAnomalies]   = useState([])
   const [loading, setLoading]       = useState(false)
   const [rechecking, setRechecking] = useState(false)
@@ -18,10 +18,10 @@ export default function AnomaliesPage() {
   const [openMerchant, setOpenMerchant]   = useState(null)
 
   useEffect(() => {
-    if (!startMonth || !endMonth) return
+    if (!startDate || !endDate) return
     setLoading(true)
-    txnApi.anomalies(startMonth, endMonth).then(r => setAnomalies(r.data)).finally(() => setLoading(false))
-  }, [startMonth, endMonth])
+    txnApi.anomalies(startDate, endDate).then(r => setAnomalies(r.data)).finally(() => setLoading(false))
+  }, [startDate, endDate])
 
   const explainMerchantFor = async (txn) => {
     if (openMerchant === txn.id) { setOpenMerchant(null); return }
@@ -39,9 +39,9 @@ export default function AnomaliesPage() {
   const recheck = async () => {
     setRechecking(true)
     try {
-      const { data } = await txnApi.recheckAnomalies(startMonth, endMonth)
+      const { data } = await txnApi.recheckAnomalies(startDate, endDate)
       toast.success(`Rechecked ${data.checked} transactions — ${data.flagged} flagged`)
-      const r = await txnApi.anomalies(startMonth, endMonth)
+      const r = await txnApi.anomalies(startDate, endDate)
       setAnomalies(r.data)
     } catch { toast.error('Recheck failed — is the ML service running?') }
     finally { setRechecking(false) }
@@ -72,7 +72,7 @@ export default function AnomaliesPage() {
               border: '1px solid rgba(99,102,241,0.2)' }}>
             <Sparkles size={11} /> Finara AI
           </span>
-          <button onClick={recheck} disabled={rechecking || !startMonth}
+          <button onClick={recheck} disabled={rechecking || !startDate}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
             style={{ background: 'var(--surface)', color: 'var(--text-2)',
               border: '1px solid var(--border)', opacity: rechecking ? 0.6 : 1 }}>

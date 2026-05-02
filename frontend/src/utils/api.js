@@ -37,14 +37,14 @@ export const authApi = {
 export const txnApi = {
   upload:        file                   => { const fd = new FormData(); fd.append('file', file); return api.post('/transactions/upload', fd) },
   uploadPdf:     file                   => { const fd = new FormData(); fd.append('file', file); return api.post('/transactions/upload-pdf', fd) },
-  list:          (startMonth, endMonth) => api.get('/transactions', { params: { startMonth, endMonth } }),
+  list:          (startDate, endDate)   => api.get('/transactions', { params: { startDate, endDate } }),
   summary:       (startMonth, endMonth) => api.get('/transactions/summary', { params: { startMonth, endMonth } }),
-  anomalies:     (startMonth, endMonth) => api.get('/transactions/anomalies', { params: { startMonth, endMonth } }),
+  anomalies:     (startDate, endDate)   => api.get('/transactions/anomalies', { params: { startDate, endDate } }),
   months:        ()                     => api.get('/transactions/months'),
   batches:       ()                     => api.get('/transactions/batches'),
   deleteBatch:   batchId                => api.delete(`/transactions/batch/${batchId}`),
   deleteAll:     ()                     => api.delete('/transactions/all'),
-  recheckAnomalies: (startMonth, endMonth) => api.post('/transactions/recheck-anomalies', null, { params: { startMonth, endMonth } }),
+  recheckAnomalies: (startDate, endDate)   => api.post('/transactions/recheck-anomalies', null, { params: { startDate, endDate } }),
   toggleAnomaly: (id, isAnomaly)        => api.patch(`/transactions/${id}/anomaly`, { isAnomaly }),
   create:        data                   => api.post('/transactions', data),
   update:        (id, data)             => api.put(`/transactions/${id}`, data),
@@ -55,7 +55,8 @@ export const txnApi = {
 export const reportApi = {
   list:     months => api.get('/reports', { params: { months } }),
   get:      month  => api.get(`/reports/${month}`),
-  forecast: month  => api.get('/forecast', { params: { month } }),
+  forecast:      month => api.get('/forecast',       { params: { month } }),
+  forecastDaily: month => api.get('/forecast/daily', { params: { month } }),
 }
 
 // ─── Budget ───────────────────────────────────────────────────────────────────

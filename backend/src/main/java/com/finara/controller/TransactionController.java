@@ -63,30 +63,34 @@ public class TransactionController {
 
     /**
      * List transactions for a date range.
-     * GET /api/transactions?startMonth=YYYY-MM&endMonth=YYYY-MM
+     * GET /api/transactions?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
      */
     @GetMapping
     public ResponseEntity<List<TransactionResponse>> listTransactions(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
             @RequestParam(required = false) String startMonth,
             @RequestParam(required = false) String endMonth,
             HttpServletRequest request) {
 
         Long userId = (Long) request.getAttribute("userId");
-        return ResponseEntity.ok(transactionService.getTransactions(userId, startMonth, endMonth));
+        return ResponseEntity.ok(transactionService.getTransactions(userId, startMonth, endMonth, startDate, endDate));
     }
 
     /**
      * UC5: Get anomalous transactions for a date range.
-     * GET /api/transactions/anomalies?startMonth=YYYY-MM&endMonth=YYYY-MM
+     * GET /api/transactions/anomalies?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
      */
     @GetMapping("/anomalies")
     public ResponseEntity<List<TransactionResponse>> getAnomalies(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
             @RequestParam(required = false) String startMonth,
             @RequestParam(required = false) String endMonth,
             HttpServletRequest request) {
 
         Long userId = (Long) request.getAttribute("userId");
-        return ResponseEntity.ok(transactionService.getAnomalies(userId, startMonth, endMonth));
+        return ResponseEntity.ok(transactionService.getAnomalies(userId, startMonth, endMonth, startDate, endDate));
     }
 
     /**
@@ -132,14 +136,16 @@ public class TransactionController {
         return ResponseEntity.ok(Map.of("message", "All data deleted successfully"));
     }
 
-    /** POST /api/transactions/recheck-anomalies?startMonth=&endMonth= */
+    /** POST /api/transactions/recheck-anomalies?startDate=&endDate= */
     @PostMapping("/recheck-anomalies")
     public ResponseEntity<Map<String, Object>> recheckAnomalies(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
             @RequestParam(required = false) String startMonth,
             @RequestParam(required = false) String endMonth,
             HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
-        return ResponseEntity.ok(transactionService.recheckAnomalies(userId, startMonth, endMonth));
+        return ResponseEntity.ok(transactionService.recheckAnomalies(userId, startMonth, endMonth, startDate, endDate));
     }
 
     /** PATCH /api/transactions/{id}/anomaly  { "isAnomaly": true/false } */

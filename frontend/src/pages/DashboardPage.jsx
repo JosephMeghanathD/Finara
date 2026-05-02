@@ -83,7 +83,7 @@ const CustomDot = ({ cx, cy, r, fill }) => (
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  const { months, startMonth, endMonth } = useTimeFilter()
+  const { months, startDate, endDate, startMonth, endMonth } = useTimeFilter()
   const [summary, setSummary]               = useState(null)
   const [recent, setRecent]                 = useState([])
   const [loadingSummary, setLoadingSummary] = useState(false)
@@ -112,7 +112,7 @@ export default function DashboardPage() {
       .finally(() => setLoadingSummary(false))
 
     setLoadingRecent(true)
-    txnApi.list(startMonth, endMonth)
+    txnApi.list(startDate, endDate)
       .then(r => setRecent((r.data || []).slice(0, 6)))
       .catch(() => {})
       .finally(() => setLoadingRecent(false))

@@ -45,6 +45,7 @@ export default function AiText({ content, compact = false, narrative = false }) 
   const lines = content.split('\n')
   const elements = []
   let bullets = []
+  let tableRows = []
   let k = 0
 
   const flushBullets = () => {
@@ -63,9 +64,56 @@ export default function AiText({ content, compact = false, narrative = false }) 
     bullets = []
   }
 
+  const flushTable = () => {
+    if (!tableRows.length) return
+    const isSeparator = row => row.every(cell => /^[-: ]+$/.test(cell))
+    const rows = tableRows.filter(r => !isSeparator(r))
+    if (rows.length < 2) { tableRows = []; return }
+    const [head, ...body] = rows
+    elements.push(
+      <div key={k++} className="my-3 overflow-x-auto rounded-xl"
+        style={{ border: '1px solid var(--border)' }}>
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr style={{ background: 'var(--brand-light)' }}>
+              {head.map((cell, ci) => (
+                <th key={ci} className="px-3 py-2 text-left font-semibold"
+                  style={{ color: 'var(--brand)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
+                  {renderInline(cell.trim())}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {body.map((row, ri) => (
+              <tr key={ri} style={{ background: ri % 2 === 0 ? 'var(--surface)' : 'var(--bg)' }}>
+                {row.map((cell, ci) => (
+                  <td key={ci} className="px-3 py-2"
+                    style={{ color: 'var(--text-2)', borderBottom: ri < body.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    {renderInline(cell.trim())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+    tableRows = []
+  }
+
   lines.forEach(raw => {
     const line = raw.trim()
-    if (!line) { flushBullets(); return }
+    if (!line) { flushBullets(); flushTable(); return }
+
+    if (line.startsWith('|') && line.endsWith('|')) {
+      flushBullets()
+      const cells = line.slice(1, -1).split('|')
+      tableRows.push(cells)
+      return
+    }
+
+    flushTable()
 
     if (line.startsWith('## ')) {
       flushBullets()
@@ -138,6 +186,7 @@ export default function AiText({ content, compact = false, narrative = false }) 
   })
 
   flushBullets()
+  flushTable()
   return (
     <div style={narrativeFont ? { fontFamily: narrativeFont } : undefined}>
       {elements}

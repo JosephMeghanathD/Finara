@@ -81,6 +81,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
                                    @Param("startMonth") String startMonth,
                                    @Param("endMonth") String endMonth);
 
+    @Query(value = "SELECT transaction_date, COALESCE(SUM(amount), 0) FROM transactions " +
+                   "WHERE user_id = :userId " +
+                   "AND (transaction_type IS NULL OR transaction_type = 'DEBIT') " +
+                   "AND (category IS NULL OR category NOT IN ('Income', 'Transfer')) " +
+                   "AND transaction_date >= :startDate AND transaction_date < :endDate " +
+                   "GROUP BY transaction_date ORDER BY transaction_date",
+           nativeQuery = true)
+    List<Object[]> getDailySpendingInRange(@Param("userId") Long userId,
+                                            @Param("startDate") LocalDate startDate,
+                                            @Param("endDate") LocalDate endDate);
+
     List<Transaction> findByUploadBatchId(String batchId);
 
     // Returns: [batchId, count, minDate, maxDate, totalAmount, uploadedAt, creditTotal, debitTotal]

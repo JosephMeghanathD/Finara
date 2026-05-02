@@ -10,7 +10,9 @@ from utils.gemma_client import ask_gemma, ask_gemma_json, ask_gemma_chat
 
 narrative_bp = Blueprint("narrative", __name__)
 
-NARRATOR_SYSTEM = """You are Finara, a personal finance AI. Be concise, cite exact numbers, and always end with one actionable next step."""
+NARRATOR_SYSTEM = """You are Finara, a personal finance AI. Be concise, cite exact numbers, and always end with one actionable next step.
+
+When the user asks for a chart, graph, or visualization, describe the data in plain text — Finara will automatically render the chart in the UI. Never suggest external tools like Excel, Google Sheets, or online chart generators."""
 
 _STORY_EXAMPLE = """
 EXAMPLE (do not copy these numbers — write the real story using the data below):
@@ -42,6 +44,13 @@ _PLACEHOLDER_RE = re.compile(
     r'\[(?:Imagine |Here is |Here\'s )?(?:a |an |your )?(?:pie|bar|line|spending|financial|category)[\w\s]*chart[^\]]*\]',
     re.IGNORECASE,
 )
+# Strips chart-config boilerplate Gemma generates when it thinks it can't render charts
+_CHART_BOILERPLATE_RE = re.compile(
+    r'(\*{0,2}(?:Chart Type|Graph Type|X-Axis|Y-Axis|Z-Axis|Bars?|Data Points?|Legend|Title|Series)\s*:\**.*\n?'
+    r'|\(Note:[^)]*(?:cannot|can\'t|unable)[^)]*(?:render|display|show|creat)[^)]*\)\n?'
+    r'|\*{0,2}Note:\*{0,2}\s*[^\n]*(?:cannot|can\'t|unable)[^\n]*(?:render|display|show|creat)[^\n]*\n?)',
+    re.IGNORECASE,
+)
 _LINE_KEYWORDS  = ["line chart", "line graph", "in line", "as line", "as a line", "trend", "over time", "over months", "month by month", "monthly trend"]
 _BAR_KEYWORDS   = ["bar chart", "bar graph"]
 
@@ -54,6 +63,7 @@ def _extract_chart(reply: str, context: dict, user_message: str = "") -> tuple[s
         return reply, None
 
     clean_reply = _PLACEHOLDER_RE.sub("", reply).strip()
+    clean_reply = _CHART_BOILERPLATE_RE.sub("", clean_reply).strip()
     clean_reply = re.sub(r'\n{3,}', '\n\n', clean_reply)
 
     # Line / trend chart — needs monthly_history
@@ -230,7 +240,7 @@ def chat():
     messages.append({"role": "user", "content": message})
 
     t0 = time.time()
-    reply = ask_gemma_chat(messages, temperature=0.7, num_ctx=2048, num_predict=400)
+    reply = ask_gemma_chat(messages, temperature=0.7, num_ctx=2048, num_predict=600)
     gemma_ms = round((time.time() - t0) * 1000)
 
     clean_reply, chart = _extract_chart(reply, context, message)

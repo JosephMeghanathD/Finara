@@ -119,7 +119,7 @@ const TOOLTIP_STYLE = {
 }
 
 export default function TransactionsPage() {
-  const { startMonth, endMonth } = useTimeFilter()
+  const { startDate, endDate, startMonth, endMonth } = useTimeFilter()
   const [txns, setTxns]             = useState([])
   const [loading, setLoading]       = useState(false)
   const [search, setSearch]         = useState('')
@@ -135,10 +135,10 @@ export default function TransactionsPage() {
   const [confirmTxn, setConfirmTxn]       = useState(null)
 
   useEffect(() => {
-    if (!startMonth || !endMonth) return
+    if (!startDate || !endDate) return
     setLoading(true); setTxns([])
-    txnApi.list(startMonth, endMonth).then(r => setTxns(r.data)).finally(() => setLoading(false))
-  }, [startMonth, endMonth])
+    txnApi.list(startDate, endDate).then(r => setTxns(r.data)).finally(() => setLoading(false))
+  }, [startDate, endDate])
 
   const explainMerchantFor = async (txn) => {
     if (openMerchant === txn.id) { setOpenMerchant(null); return }
@@ -187,9 +187,9 @@ export default function TransactionsPage() {
 
   const handleSaved = () => {
     setModalOpen(false); setEditingTxn(null)
-    if (!startMonth || !endMonth) return
+    if (!startDate || !endDate) return
     setLoading(true)
-    txnApi.list(startMonth, endMonth).then(r => setTxns(r.data)).finally(() => setLoading(false))
+    txnApi.list(startDate, endDate).then(r => setTxns(r.data)).finally(() => setLoading(false))
   }
 
   const isCredit = t => t.transactionType === 'CREDIT'

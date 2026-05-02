@@ -1,82 +1,290 @@
 """
-Route: /api/ml/forecast
-ARIMA / exponential smoothing forecast for next month's spending per category.
+Route: /api/ml/forecast  (monthly) and /api/ml/forecast/daily (daily with weekly seasonality)
 """
 
 import time
+from datetime import date, timedelta
 from flask import Blueprint, request, jsonify
-import pandas as pd
 import numpy as np
-from statsmodels.tsa.holtwinters import SimpleExpSmoothing
+from statsmodels.tsa.holtwinters import SimpleExpSmoothing, ExponentialSmoothing
 
 forecast_bp = Blueprint("forecast", __name__)
 
+SEASONAL_PERIODS = 12   # monthly data, yearly seasonality
+WEEKLY_PERIODS   = 7    # daily data, weekly seasonality
+
+_MODEL_NAMES = {
+    "holt_winters_seasonal": "Holt-Winters (seasonal + trend)",
+    "holt_winters_trend":    "Holt-Winters (damped trend)",
+    "holt_winters_weekly":   "Holt-Winters (weekly seasonal)",
+    "simple_exp_smoothing":  "Simple Exponential Smoothing",
+    "mean_fallback":         "Mean (insufficient data)",
+}
+
+
+def _trend(series: np.ndarray) -> str:
+    recent_avg = np.mean(series[-2:])
+    older_avg  = np.mean(series[:-2]) if len(series) > 2 else recent_avg
+    if recent_avg > older_avg * 1.05:
+        return "increasing"
+    if recent_avg < older_avg * 0.95:
+        return "decreasing"
+    return "stable"
+
+
+# ── Monthly forecast ─────────────────────────────────────────────────────────
 
 def forecast_category(amounts: list[float], periods: int = 1) -> dict:
     """
-    Given a list of monthly totals, forecast the next `periods` months.
-    Falls back to mean if insufficient data.
+    Model selection (monthly data):
+      >= 24 months  →  Holt-Winters full (additive trend + additive seasonal, period=12)
+      >= 4  months  →  Holt-Winters damped trend (no seasonality)
+      >= 3  months  →  Simple Exponential Smoothing
+      <  3  months  →  Mean fallback
     """
-    series = np.array(amounts, dtype=float)
+    series     = np.array(amounts, dtype=float)
+    n          = len(series)
+    hist_avg   = round(float(np.mean(series)), 2) if n > 0 else 0.0
+    last_month = round(float(series[-1]),      2) if n > 0 else 0.0
 
-    if len(series) < 3:
-        mean_val = float(np.mean(series)) if len(series) > 0 else 0.0
+    if n < 3:
+        margin = round(hist_avg * 0.15, 2)
         return {
-            "forecast": [round(mean_val, 2)] * periods,
-            "method":   "mean_fallback",
-            "trend":    "insufficient_data",
+            "forecast":        [round(hist_avg, 2)] * periods,
+            "target_value":    round(hist_avg, 2),
+            "model":           "mean_fallback",
+            "model_label":     _MODEL_NAMES["mean_fallback"],
+            "trend":           "insufficient_data",
+            "historical_avg":  hist_avg,
+            "last_month":      last_month,
+            "history_count":   n,
+            "confidence_low":  round(max(0.0, hist_avg - margin), 2),
+            "confidence_high": round(hist_avg + margin, 2),
         }
+
+    def _build_model(s):
+        if len(s) >= 2 * SEASONAL_PERIODS:
+            return ExponentialSmoothing(
+                s, trend="add", seasonal="add",
+                seasonal_periods=SEASONAL_PERIODS,
+                initialization_method="estimated",
+            ), "holt_winters_seasonal"
+        if len(s) >= 4:
+            return ExponentialSmoothing(
+                s, trend="add", damped_trend=True,
+                initialization_method="estimated",
+            ), "holt_winters_trend"
+        return SimpleExpSmoothing(s, initialization_method="estimated"), "simple_exp_smoothing"
 
     try:
-        model   = SimpleExpSmoothing(series, initialization_method="estimated")
-        fit     = model.fit(optimized=True)
-        forecast = fit.forecast(periods)
+        model_obj, model_key = _build_model(series)
+        fit      = model_obj.fit(optimized=True)
+        fc_array = fit.forecast(periods)
+        fval     = max(0.0, float(fc_array[-1]))
 
-        # Determine trend
-        recent_avg = np.mean(series[-2:])
-        older_avg  = np.mean(series[:-2]) if len(series) > 2 else recent_avg
-        if recent_avg > older_avg * 1.05:
-            trend = "increasing"
-        elif recent_avg < older_avg * 0.95:
-            trend = "decreasing"
-        else:
-            trend = "stable"
+        residuals = series - fit.fittedvalues
+        std = float(np.std(residuals)) if len(residuals) > 1 else float(np.std(series)) * 0.2
 
         return {
-            "forecast": [round(float(v), 2) for v in forecast],
-            "method":   "exponential_smoothing",
-            "trend":    trend,
+            "forecast":        [round(max(0.0, float(v)), 2) for v in fc_array],
+            "target_value":    round(fval, 2),
+            "model":           model_key,
+            "model_label":     _MODEL_NAMES[model_key],
+            "trend":           _trend(series),
+            "historical_avg":  hist_avg,
+            "last_month":      last_month,
+            "history_count":   n,
+            "confidence_low":  round(max(0.0, fval - std), 2),
+            "confidence_high": round(fval + std, 2),
         }
+
     except Exception:
-        mean_val = float(np.mean(series))
+        try:
+            model_obj, model_key = _build_model(series[:max(3, n - 1)])
+            fit      = model_obj.fit(optimized=True)
+            fc_array = fit.forecast(periods)
+            fval     = max(0.0, float(fc_array[-1]))
+            margin   = round(float(np.std(series)) * 0.5, 2)
+            return {
+                "forecast":        [round(max(0.0, float(v)), 2) for v in fc_array],
+                "target_value":    round(fval, 2),
+                "model":           model_key,
+                "model_label":     _MODEL_NAMES[model_key] + " (fallback)",
+                "trend":           _trend(series),
+                "historical_avg":  hist_avg,
+                "last_month":      last_month,
+                "history_count":   n,
+                "confidence_low":  round(max(0.0, fval - margin), 2),
+                "confidence_high": round(fval + margin, 2),
+            }
+        except Exception:
+            margin = round(float(np.std(series)) * 0.5, 2)
+            return {
+                "forecast":        [round(hist_avg, 2)] * periods,
+                "target_value":    round(hist_avg, 2),
+                "model":           "mean_fallback",
+                "model_label":     _MODEL_NAMES["mean_fallback"],
+                "trend":           "stable",
+                "historical_avg":  hist_avg,
+                "last_month":      last_month,
+                "history_count":   n,
+                "confidence_low":  round(max(0.0, hist_avg - margin), 2),
+                "confidence_high": round(hist_avg + margin, 2),
+            }
+
+
+# ── Daily forecast ───────────────────────────────────────────────────────────
+
+def _apply_monthly_overlay(fc_vals: list, residuals, series, start_date_str: str) -> list:
+    """
+    Detect day-of-month patterns that the weekly HW model missed (e.g. rent on the 1st)
+    by grouping residuals by day-of-month across the history window.
+    Only applies a correction when the mean residual for a day is consistently large
+    (> 0.5 * series std), which requires at least 2 historical occurrences.
+    """
+    if not start_date_str:
+        return fc_vals
+    try:
+        hist_start    = date.fromisoformat(start_date_str)
+        dom_residuals = {}
+        for i, resid in enumerate(residuals):
+            dom = (hist_start + timedelta(days=int(i))).day
+            dom_residuals.setdefault(dom, []).append(float(resid))
+
+        series_std = float(np.std(series))
+        threshold  = series_std * 0.5
+
+        dom_correction = {
+            dom: float(np.mean(resids))
+            for dom, resids in dom_residuals.items()
+            if len(resids) >= 2 and abs(float(np.mean(resids))) > threshold
+        }
+        if not dom_correction:
+            return fc_vals
+
+        return [
+            round(max(0.0, fc_vals[i] + dom_correction.get(i + 1, 0.0)), 2)
+            for i in range(len(fc_vals))
+        ]
+    except Exception:
+        return fc_vals  # never break the main forecast
+
+
+def forecast_daily(daily_amounts: list[float], periods: int = 30,
+                   start_date_str: str = None) -> dict:
+    """
+    Daily spending forecast with weekly seasonality.
+      >= 14 days  →  Holt-Winters additive weekly seasonal (period=7)
+      >= 3  days  →  Simple Exponential Smoothing
+      <  3  days  →  Mean fallback
+    Returns per-day forecast array + residual std for confidence band.
+    """
+    series   = np.array(daily_amounts, dtype=float)
+    n        = len(series)
+    hist_avg = round(float(np.mean(series)), 2) if n > 0 else 0.0
+
+    if n < 3:
+        std = round(hist_avg * 0.3, 2)
+        fc_vals   = [round(hist_avg, 2)] * periods
+        conf_low  = [round(max(0.0, v - std), 2) for v in fc_vals]
+        conf_high = [round(v + std, 2)           for v in fc_vals]
         return {
-            "forecast": [round(mean_val, 2)] * periods,
-            "method":   "mean_fallback",
-            "trend":    "stable",
+            "forecast":         fc_vals,
+            "confidence_low":   conf_low,
+            "confidence_high":  conf_high,
+            "model":            "mean_fallback",
+            "model_label":      _MODEL_NAMES["mean_fallback"],
+            "history_count":    n,
+            "std":              std,
         }
 
+    def _build_daily_model(s):
+        if len(s) >= 2 * WEEKLY_PERIODS:
+            return ExponentialSmoothing(
+                s, trend="add", seasonal="add",
+                seasonal_periods=WEEKLY_PERIODS,
+                initialization_method="estimated",
+            ), "holt_winters_weekly"
+        return SimpleExpSmoothing(s, initialization_method="estimated"), "simple_exp_smoothing"
+
+    def _make_bounds(fc_vals, residuals):
+        """MAD-based bounds — tighter and more robust than raw std on heavy-tailed daily data."""
+        raw_std  = float(np.std(residuals)) if len(residuals) > 1 else float(np.std(series)) * 0.2
+        mad      = float(np.median(np.abs(residuals - np.median(residuals))))
+        # MAD * 1.4826 ≈ 1-sigma for normal data; cap at raw_std to avoid absurdly wide bands
+        margin   = min(mad * 1.4826, raw_std * 0.6)
+        margin   = max(margin, 1.0)          # floor so band is always non-zero
+        conf_low  = [round(max(0.0, v - margin), 2) for v in fc_vals]
+        conf_high = [round(v + margin, 2)            for v in fc_vals]
+        return round(raw_std, 2), round(margin, 2), conf_low, conf_high
+
+    try:
+        model_obj, model_key = _build_daily_model(series)
+        fit      = model_obj.fit(optimized=True)
+        fc_array = fit.forecast(periods)
+
+        # Bias correction: scale forecast so its implied mean matches the actual series mean.
+        # HW can drift high when trained on a series with large outliers (e.g. rent spikes),
+        # since the level parameter absorbs those into the baseline.
+        fitted_mean = float(np.mean(fit.fittedvalues))
+        actual_mean = float(np.mean(series))
+        bias = (actual_mean / fitted_mean) if fitted_mean > 0 else 1.0
+        bias = max(0.4, min(bias, 2.5))  # sanity clamp
+        fc_vals  = [round(max(0.0, float(v) * bias), 2) for v in fc_array]
+
+        residuals = series - fit.fittedvalues
+        fc_vals   = _apply_monthly_overlay(fc_vals, residuals, series, start_date_str)
+        std, margin, conf_low, conf_high = _make_bounds(fc_vals, residuals)
+
+        return {
+            "forecast":         fc_vals,
+            "confidence_low":   conf_low,
+            "confidence_high":  conf_high,
+            "model":            model_key,
+            "model_label":      _MODEL_NAMES[model_key],
+            "history_count":    n,
+            "std":              std,
+        }
+
+    except Exception:
+        try:
+            model_obj, model_key = _build_daily_model(series[:max(3, n - 1)])
+            fit      = model_obj.fit(optimized=True)
+            fc_array = fit.forecast(periods)
+            fc_vals  = [round(max(0.0, float(v)), 2) for v in fc_array]
+            residuals = series - fit.fittedvalues
+            fc_vals   = _apply_monthly_overlay(fc_vals, residuals, series, start_date_str)
+            std, margin, conf_low, conf_high = _make_bounds(fc_vals, residuals)
+            return {
+                "forecast":         fc_vals,
+                "confidence_low":   conf_low,
+                "confidence_high":  conf_high,
+                "model":            model_key,
+                "model_label":      _MODEL_NAMES[model_key] + " (fallback)",
+                "history_count":    n,
+                "std":              std,
+            }
+        except Exception:
+            std = round(float(np.std(series)) * 0.5, 2)
+            fc_vals   = [round(hist_avg, 2)] * periods
+            conf_low  = [round(max(0.0, v - std), 2) for v in fc_vals]
+            conf_high = [round(v + std, 2)            for v in fc_vals]
+            return {
+                "forecast":         fc_vals,
+                "confidence_low":   conf_low,
+                "confidence_high":  conf_high,
+                "model":            "mean_fallback",
+                "model_label":      _MODEL_NAMES["mean_fallback"],
+                "history_count":    n,
+                "std":              std,
+            }
+
+
+# ── Routes ───────────────────────────────────────────────────────────────────
 
 @forecast_bp.route("/forecast", methods=["POST"])
 def forecast():
-    """
-    Input:
-    {
-      "monthly_totals": {
-        "Food & Drink":  [320, 310, 355, 340],
-        "Transport":     [120, 130, 115],
-        "Shopping":      [250, 400, 180, 300]
-      },
-      "periods": 1
-    }
-    Output:
-    {
-      "forecasts": {
-        "Food & Drink":  { "forecast": [348.0], "trend": "stable" },
-        ...
-      }
-    }
-    """
-    data          = request.get_json()
+    data           = request.get_json()
     monthly_totals = data.get("monthly_totals", {})
     periods        = int(data.get("periods", 1))
 
@@ -88,9 +296,24 @@ def forecast():
     for category, amounts in monthly_totals.items():
         forecasts[category] = forecast_category(amounts, periods)
 
-    # Total forecast
     all_totals = [sum(v) for v in zip(*monthly_totals.values())]
     forecasts["_total"] = forecast_category(all_totals, periods)
-    total_ms = round((time.time() - t0) * 1000)
 
+    total_ms = round((time.time() - t0) * 1000)
     return jsonify({"forecasts": forecasts, "timing": {"total_ms": total_ms}})
+
+
+@forecast_bp.route("/forecast/daily", methods=["POST"])
+def forecast_daily_endpoint():
+    data         = request.get_json()
+    daily_totals = data.get("daily_totals", [])
+    periods      = int(data.get("periods", 30))
+    start_date   = data.get("start_date")   # YYYY-MM-DD of first history day
+
+    if not daily_totals:
+        return jsonify({"error": "daily_totals is required"}), 400
+
+    t0       = time.time()
+    result   = forecast_daily(daily_totals, periods, start_date)
+    total_ms = round((time.time() - t0) * 1000)
+    return jsonify({**result, "timing": {"total_ms": total_ms}})

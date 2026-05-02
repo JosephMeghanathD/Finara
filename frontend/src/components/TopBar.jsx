@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useTimeFilter } from '../hooks/useTimeFilter'
-import MonthRangePicker from './MonthRangePicker'
+import DateRangePicker from './DateRangePicker'
 import { LogOut } from 'lucide-react'
 
 const PAGE_LABELS = {
@@ -25,12 +25,12 @@ const RANGE_PAGES = new Set([
 
 export default function TopBar() {
   const { user, logout }                        = useAuth()
-  const { months, startMonth, endMonth, setRange } = useTimeFilter()
+  const { startDate, endDate, minDate, maxDate, setRange } = useTimeFilter()
   const navigate   = useNavigate()
   const location   = useLocation()
 
   const handleLogout = () => { logout(); navigate('/login') }
-  const showPicker   = RANGE_PAGES.has(location.pathname) && months.length > 0
+  const showPicker   = RANGE_PAGES.has(location.pathname) && !!minDate
 
   return (
     <div className="flex items-center gap-4 px-7 flex-shrink-0"
@@ -49,10 +49,11 @@ export default function TopBar() {
       {/* Global time filter — centred */}
       <div className="flex-1 flex justify-center">
         {showPicker && (
-          <MonthRangePicker
-            months={months}
-            startMonth={startMonth}
-            endMonth={endMonth}
+          <DateRangePicker
+            startDate={startDate}
+            endDate={endDate}
+            minDate={minDate}
+            maxDate={maxDate}
             onChange={setRange}
           />
         )}

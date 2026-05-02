@@ -54,6 +54,16 @@ public class ReportAndBudgetController {
         return ResponseEntity.ok(reportService.getForecast(userId, month));
     }
 
+    /** GET /api/forecast/daily?month=2025-07 */
+    @GetMapping("/forecast/daily")
+    public ResponseEntity<Map<String, Object>> getDailyForecast(
+            @RequestParam String month,
+            HttpServletRequest request) {
+
+        Long userId = (Long) request.getAttribute("userId");
+        return ResponseEntity.ok(reportService.getDailyForecast(userId, month));
+    }
+
     // ─── UC7: Budget vs Actual ────────────────────────────────────────────────
 
     /** GET /api/budget?month=2025-07&includeAnalysis=false */

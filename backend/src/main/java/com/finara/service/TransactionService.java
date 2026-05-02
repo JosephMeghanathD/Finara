@@ -437,7 +437,19 @@ public class TransactionService {
 
     // ─── UC5: Anomalies ───────────────────────────────────────────────────────
 
-    public List<TransactionResponse> getAnomalies(Long userId, String startMonth, String endMonth) {
+    public List<TransactionResponse> getAnomalies(Long userId, String startMonth, String endMonth,
+                                                    String startDate, String endDate) {
+        if (startDate != null && endDate != null) {
+            LocalDate s = LocalDate.parse(startDate);
+            LocalDate e = LocalDate.parse(endDate);
+            return transactionRepository
+                    .findByUserIdAndTransactionDateBetweenOrderByTransactionDateDesc(userId, s, e)
+                    .stream()
+                    .filter(t -> !"CREDIT".equals(t.getTransactionType()))
+                    .filter(t -> Boolean.TRUE.equals(t.getIsAnomaly()))
+                    .map(this::toResponse)
+                    .collect(Collectors.toList());
+        }
         return transactionRepository
                 .findByUserIdAndIsAnomalyTrueOrderByTransactionDateDesc(userId)
                 .stream()
@@ -455,10 +467,14 @@ public class TransactionService {
         @CacheEvict(value = "summaries",            allEntries = true),
         @CacheEvict(value = "anomaly-explanations", allEntries = true),
     })
-    public Map<String, Object> recheckAnomalies(Long userId, String startMonth, String endMonth) {
+    public Map<String, Object> recheckAnomalies(Long userId, String startMonth, String endMonth,
+                                                  String startDate, String endDate) {
         long dbStart = System.currentTimeMillis();
         List<Transaction> txns;
-        if (startMonth != null && endMonth != null) {
+        if (startDate != null && endDate != null) {
+            txns = transactionRepository.findByUserIdAndTransactionDateBetweenOrderByTransactionDateDesc(
+                    userId, LocalDate.parse(startDate), LocalDate.parse(endDate));
+        } else if (startMonth != null && endMonth != null) {
             txns = transactionRepository.findByUserIdAndMonthRange(userId, startMonth, endMonth);
         } else if (startMonth != null) {
             txns = transactionRepository.findByUserIdAndMonth(userId, startMonth);
@@ -477,9 +493,13 @@ public class TransactionService {
         return Map.of("checked", rechecked.size(), "flagged", flagged);
     }
 
-    public List<TransactionResponse> getTransactions(Long userId, String startMonth, String endMonth) {
+    public List<TransactionResponse> getTransactions(Long userId, String startMonth, String endMonth,
+                                                       String startDate, String endDate) {
         List<Transaction> txns;
-        if (startMonth != null && endMonth != null) {
+        if (startDate != null && endDate != null) {
+            txns = transactionRepository.findByUserIdAndTransactionDateBetweenOrderByTransactionDateDesc(
+                    userId, LocalDate.parse(startDate), LocalDate.parse(endDate));
+        } else if (startMonth != null && endMonth != null) {
             txns = transactionRepository.findByUserIdAndMonthRange(userId, startMonth, endMonth);
         } else if (startMonth != null) {
             txns = transactionRepository.findByUserIdAndMonth(userId, startMonth);
