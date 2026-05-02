@@ -5,6 +5,80 @@ import { useTimeFilter } from '../hooks/useTimeFilter'
 import { Send, MessageSquare, Sparkles } from 'lucide-react'
 import AiText from '../components/AiText'
 import { format, parseISO } from 'date-fns'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts'
+
+const CAT_COLORS = {
+  'Food & Drink': '#6366F1', 'Groceries': '#8B5CF6', 'Transport': '#0EA5E9',
+  'Shopping': '#F59E0B', 'Entertainment': '#10B981', 'Healthcare': '#EF4444',
+  'Utilities': '#6366F1', 'Rent & Housing': '#84CC16', 'Travel': '#F97316',
+  'Financial': '#64748B', 'Subscriptions': '#A78BFA', 'Personal Care': '#EC4899',
+}
+const FALLBACK_COLORS = ['#6366F1','#8B5CF6','#0EA5E9','#F59E0B','#10B981','#EF4444','#F97316','#84CC16']
+
+const TOOLTIP_STYLE = {
+  contentStyle: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text)' },
+  itemStyle: { color: 'var(--text)' },
+  labelStyle: { color: 'var(--text-2)' },
+}
+
+function InlineChart({ chart }) {
+  if (!chart || !chart.data?.length) return null
+  const total = chart.data.reduce((s, d) => s + d.value, 0)
+
+  const wrapper = (children, height = 220) => (
+    <div className="mt-3 rounded-xl overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <p className="text-xs font-semibold px-4 pt-3 pb-1" style={{ color: 'var(--text-2)' }}>{chart.title}</p>
+      <ResponsiveContainer width="100%" height={height}>{children}</ResponsiveContainer>
+    </div>
+  )
+
+  if (chart.type === 'line') {
+    const fmtMonth = m => { try { return format(parseISO(m + '-01'), 'MMM yy') } catch { return m } }
+    const lineData = chart.data.map(d => ({ ...d, month: fmtMonth(d.month) }))
+    return wrapper(
+      <LineChart data={lineData} margin={{ left: 8, right: 24, top: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+        <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} />
+        <YAxis tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} width={42} />
+        <Tooltip formatter={(v, name) => [`$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, name === 'total' ? 'Spent' : 'Income']} {...TOOLTIP_STYLE} />
+        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} formatter={v => v === 'total' ? 'Spent' : 'Income'} />
+        <Line type="monotone" dataKey="total" stroke="#6366F1" strokeWidth={2} dot={{ r: 3, fill: '#6366F1' }} activeDot={{ r: 5 }} />
+        <Line type="monotone" dataKey="income" stroke="#10B981" strokeWidth={2} dot={{ r: 3, fill: '#10B981' }} activeDot={{ r: 5 }} />
+      </LineChart>
+    )
+  }
+
+  if (chart.type === 'bar') {
+    const barHeight = Math.max(180, chart.data.length * 32 + 40)
+    return wrapper(
+      <BarChart data={chart.data} layout="vertical" margin={{ left: 8, right: 24, top: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+        <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickFormatter={v => `$${v}`} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-2)' }} width={110} axisLine={false} tickLine={false} />
+        <Tooltip formatter={(v, name) => [`$${v.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, name]} {...TOOLTIP_STYLE} />
+        <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={20}>
+          {chart.data.map((entry, i) => (
+            <Cell key={i} fill={CAT_COLORS[entry.name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]} />
+          ))}
+        </Bar>
+      </BarChart>,
+      barHeight,
+    )
+  }
+
+  return wrapper(
+    <PieChart>
+      <Pie data={chart.data} dataKey="value" nameKey="name" cx="50%" cy="50%"
+        innerRadius={55} outerRadius={85} paddingAngle={2}>
+        {chart.data.map((entry, i) => (
+          <Cell key={i} fill={CAT_COLORS[entry.name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]} />
+        ))}
+      </Pie>
+      <Tooltip formatter={(v, name) => [`$${v.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${((v / total) * 100).toFixed(1)}%)`, name]} {...TOOLTIP_STYLE} />
+      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
+    </PieChart>
+  )
+}
 
 const THINKING_PHRASES = [
   'Reading your transaction data…',
@@ -84,7 +158,7 @@ function ThinkingBubble() {
   )
 }
 
-function AssistantBubble({ content, error }) {
+function AssistantBubble({ content, chart, error }) {
   return (
     <div className="flex items-start gap-2.5 chat-message">
       <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 text-sm"
@@ -99,7 +173,10 @@ function AssistantBubble({ content, error }) {
         }}>
         {error
           ? <p className="text-sm" style={{ color: '#f87171' }}>{content}</p>
-          : <AiText content={content} compact />
+          : <>
+              <AiText content={content} compact />
+              <InlineChart chart={chart} />
+            </>
         }
       </div>
     </div>
@@ -153,7 +230,7 @@ export default function ChatPage() {
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }))
       const { data } = await aiApi.chat({ message: msg, startMonth, endMonth, history })
-      setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
+      setMessages(prev => [...prev, { role: 'assistant', content: data.reply, chart: data.chart || null }])
     } catch {
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -200,7 +277,7 @@ export default function ChatPage() {
         {messages.map((msg, i) =>
           msg.role === 'user'
             ? <UserBubble key={i} content={msg.content} />
-            : <AssistantBubble key={i} content={msg.content} error={msg.error} />
+            : <AssistantBubble key={i} content={msg.content} chart={msg.chart} error={msg.error} />
         )}
 
         {loading && <ThinkingBubble />}

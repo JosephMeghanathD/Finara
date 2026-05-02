@@ -1,0 +1,450 @@
+{
+  "info": {
+    "_postman_id": "finara-api-collection",
+    "name": "Finara API",
+    "description": "Complete API collection for Finara. Run 'Login' or 'Register' first — the token is captured automatically into {{token}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
+    { "key": "token",    "value": "", "type": "string" },
+    { "key": "txn_id",  "value": "1", "type": "string" },
+    { "key": "batch_id","value": "", "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "if (pm.response.code === 200) {",
+            "  var json = pm.response.json();",
+            "  pm.collectionVariables.set('token', json.token);",
+            "  console.log('Token saved:', json.token);",
+            "}"
+          ]}}],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Test\",\n  \"lastName\": \"User\",\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\",\n  \"monthlyIncome\": 8000\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api","auth","register"] }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "if (pm.response.code === 200) {",
+            "  var json = pm.response.json();",
+            "  pm.collectionVariables.set('token', json.token);",
+            "  console.log('Token saved:', json.token);",
+            "}"
+          ]}}],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api","auth","login"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Upload CSV",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [{ "key": "file", "type": "file", "src": "", "description": "Select a CSV bank statement file" }]
+            },
+            "url": { "raw": "{{base_url}}/api/transactions/upload", "host": ["{{base_url}}"], "path": ["api","transactions","upload"] }
+          }
+        },
+        {
+          "name": "Upload PDF",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [{ "key": "file", "type": "file", "src": "", "description": "Select a PDF bank statement file" }]
+            },
+            "url": { "raw": "{{base_url}}/api/transactions/upload-pdf", "host": ["{{base_url}}"], "path": ["api","transactions","upload-pdf"] }
+          }
+        },
+        {
+          "name": "List Transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/transactions?startMonth=2026-04&endMonth=2026-04",
+              "host": ["{{base_url}}"], "path": ["api","transactions"],
+              "query": [
+                { "key": "startMonth", "value": "2026-04" },
+                { "key": "endMonth",   "value": "2026-04" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Spending Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/transactions/summary?startMonth=2026-04&endMonth=2026-04",
+              "host": ["{{base_url}}"], "path": ["api","transactions","summary"],
+              "query": [
+                { "key": "startMonth", "value": "2026-04" },
+                { "key": "endMonth",   "value": "2026-04" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Anomalies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/transactions/anomalies?startMonth=2026-04&endMonth=2026-04",
+              "host": ["{{base_url}}"], "path": ["api","transactions","anomalies"],
+              "query": [
+                { "key": "startMonth", "value": "2026-04" },
+                { "key": "endMonth",   "value": "2026-04" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Available Months",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/transactions/months", "host": ["{{base_url}}"], "path": ["api","transactions","months"] }
+          }
+        },
+        {
+          "name": "Get Upload Batches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/transactions/batches", "host": ["{{base_url}}"], "path": ["api","transactions","batches"] }
+          }
+        },
+        {
+          "name": "Create Transaction",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "if (pm.response.code === 200) {",
+            "  pm.collectionVariables.set('txn_id', pm.response.json().id);",
+            "}"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Starbucks Coffee\",\n  \"amount\": 6.50,\n  \"transactionDate\": \"2026-04-15\",\n  \"transactionType\": \"DEBIT\",\n  \"category\": \"Food & Drink\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/transactions", "host": ["{{base_url}}"], "path": ["api","transactions"] }
+          }
+        },
+        {
+          "name": "Update Transaction",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Starbucks Coffee (edited)\",\n  \"amount\": 7.25,\n  \"transactionDate\": \"2026-04-15\",\n  \"transactionType\": \"DEBIT\",\n  \"category\": \"Food & Drink\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/transactions/{{txn_id}}", "host": ["{{base_url}}"], "path": ["api","transactions","{{txn_id}}"] }
+          }
+        },
+        {
+          "name": "Toggle Anomaly Flag",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isAnomaly\": true\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/transactions/{{txn_id}}/anomaly", "host": ["{{base_url}}"], "path": ["api","transactions","{{txn_id}}","anomaly"] }
+          }
+        },
+        {
+          "name": "Recheck Anomalies",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/transactions/recheck-anomalies?startMonth=2026-04&endMonth=2026-04",
+              "host": ["{{base_url}}"], "path": ["api","transactions","recheck-anomalies"],
+              "query": [
+                { "key": "startMonth", "value": "2026-04" },
+                { "key": "endMonth",   "value": "2026-04" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Transaction",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/transactions/{{txn_id}}", "host": ["{{base_url}}"], "path": ["api","transactions","{{txn_id}}"] }
+          }
+        },
+        {
+          "name": "Delete Batch",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/transactions/batch/{{batch_id}}", "host": ["{{base_url}}"], "path": ["api","transactions","batch","{{batch_id}}"] }
+          }
+        },
+        {
+          "name": "Delete All Data",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/transactions/all", "host": ["{{base_url}}"], "path": ["api","transactions","all"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Reports & Forecast",
+      "item": [
+        {
+          "name": "Compare Reports (multi-month)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/reports?months=2026-02,2026-03,2026-04",
+              "host": ["{{base_url}}"], "path": ["api","reports"],
+              "query": [{ "key": "months", "value": "2026-02,2026-03,2026-04" }]
+            }
+          }
+        },
+        {
+          "name": "Get Single Report with Narrative",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/reports/2026-04", "host": ["{{base_url}}"], "path": ["api","reports","2026-04"] }
+          }
+        },
+        {
+          "name": "Get Forecast",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/forecast?month=2026-05",
+              "host": ["{{base_url}}"], "path": ["api","forecast"],
+              "query": [{ "key": "month", "value": "2026-05" }]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Budget",
+      "item": [
+        {
+          "name": "Get Budget vs Actual",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/budget?month=2026-04&includeAnalysis=true",
+              "host": ["{{base_url}}"], "path": ["api","budget"],
+              "query": [
+                { "key": "month",           "value": "2026-04" },
+                { "key": "includeAnalysis", "value": "true" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Budget vs Actual (no AI)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/budget?month=2026-04&includeAnalysis=false",
+              "host": ["{{base_url}}"], "path": ["api","budget"],
+              "query": [
+                { "key": "month",           "value": "2026-04" },
+                { "key": "includeAnalysis", "value": "false" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set Budget",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"month\": \"2026-05\",\n  \"budgets\": {\n    \"Food & Drink\": 400,\n    \"Groceries\": 600,\n    \"Transport\": 300,\n    \"Shopping\": 200,\n    \"Entertainment\": 150,\n    \"Utilities\": 250\n  }\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/budget", "host": ["{{base_url}}"], "path": ["api","budget"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "AI (Gemma)",
+      "item": [
+        {
+          "name": "Generate Monthly Story",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startMonth\": \"2026-04\",\n  \"endMonth\": \"2026-04\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/ai/story", "host": ["{{base_url}}"], "path": ["api","ai","story"] }
+          }
+        },
+        {
+          "name": "Generate Story (force refresh)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startMonth\": \"2026-04\",\n  \"endMonth\": \"2026-04\",\n  \"refresh\": \"true\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/ai/story", "host": ["{{base_url}}"], "path": ["api","ai","story"] }
+          }
+        },
+        {
+          "name": "Generate Multi-Month Story",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startMonth\": \"2026-01\",\n  \"endMonth\": \"2026-04\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/ai/story", "host": ["{{base_url}}"], "path": ["api","ai","story"] }
+          }
+        },
+        {
+          "name": "Explain Anomaly",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": {{txn_id}}\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/ai/explain-anomaly", "host": ["{{base_url}}"], "path": ["api","ai","explain-anomaly"] }
+          }
+        },
+        {
+          "name": "Savings Goal Reality Check",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goalAmount\": 10000,\n  \"timeframeMonths\": 12,\n  \"startMonth\": \"2026-04\",\n  \"endMonth\": \"2026-04\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/ai/reality-check", "host": ["{{base_url}}"], "path": ["api","ai","reality-check"] }
+          }
+        },
+        {
+          "name": "Smart Savings Plan",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goalAmount\": 10000,\n  \"timeframeMonths\": 12,\n  \"startMonth\": \"2026-04\",\n  \"endMonth\": \"2026-04\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/ai/savings-plan", "host": ["{{base_url}}"], "path": ["api","ai","savings-plan"] }
+          }
+        },
+        {
+          "name": "Chat",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Where did I spend the most this month?\",\n  \"startMonth\": \"2026-04\",\n  \"endMonth\": \"2026-04\",\n  \"history\": []\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/ai/chat", "host": ["{{base_url}}"], "path": ["api","ai","chat"] }
+          }
+        },
+        {
+          "name": "Chat (with history)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Show my spending breakdown as a bar chart\",\n  \"startMonth\": \"2026-04\",\n  \"endMonth\": \"2026-04\",\n  \"history\": [\n    { \"role\": \"user\",      \"content\": \"Where did I spend the most?\" },\n    { \"role\": \"assistant\", \"content\": \"Housing was your biggest expense at $2350.\" }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/ai/chat", "host": ["{{base_url}}"], "path": ["api","ai","chat"] }
+          }
+        },
+        {
+          "name": "Explain Merchant",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchantName\": \"AMZN MKTP US*AB12CD\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/ai/explain-merchant", "host": ["{{base_url}}"], "path": ["api","ai","explain-merchant"] }
+          }
+        },
+        {
+          "name": "Weekly Coach Tips",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/ai/coach",
+              "host": ["{{base_url}}"], "path": ["api","ai","coach"],
+              "query": [{ "key": "week", "value": "", "disabled": true }]
+            }
+          }
+        }
+      ]
+    }
+
+  ]
+}

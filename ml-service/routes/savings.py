@@ -10,16 +10,30 @@ from utils.gemma_client import ask_gemma_json
 
 savings_bp = Blueprint("savings", __name__)
 
-ADVISOR_SYSTEM = "You are Finara, a practical financial advisor. Give specific, number-based advice. Be direct and honest."
+ADVISOR_SYSTEM = "You are Finara, a practical financial advisor. Always name the specific category to cut and by how much. Never give vague advice like 'reduce discretionary spending'."
+
+_REALITY_CHECK_EXAMPLE = """
+EXAMPLE (do not copy these numbers):
+Input: Goal $1,500 in 3 months. Income $3,800, spending $3,400, surplus $400/mo. Need $500/mo. Top: Dining $620, Subscriptions $90.
+Expected JSON: {"analysis": "Your $400 monthly surplus falls $100 short of the $500/month needed, which is a manageable gap. Cutting $120 from dining — about one fewer restaurant meal per week — closes it with room to spare.", "biggest_opportunity": "Dining"}
+"""
+
+_SAVINGS_PLAN_EXAMPLE = """
+EXAMPLE (do not copy these numbers — use real data below):
+Input: Goal $2,400 in 4 months = $600/mo. Surplus $400. Discretionary: Dining $550, Entertainment $180.
+Expected JSON (abbreviated):
+{"plan": "You need $200/month beyond your current $400 surplus. Dining is your biggest lever.", "cuts": [{"category": "Dining", "current_monthly": 550, "target_monthly": 350, "monthly_savings": 200, "tip": "Cook dinner 4 nights a week — batch-prep on Sundays."}], "total_monthly_savings": 200, "on_track": true}
+"""
 
 
 @savings_bp.route("/reality-check", methods=["POST"])
 def reality_check():
-    data          = request.get_json()
-    goal_amount   = float(data.get("goal_amount", 0))
-    timeframe     = int(data.get("timeframe_months", 3))
-    income        = float(data.get("monthly_income", 0))
-    spending_cats = data.get("monthly_spending", {})
+    data            = request.get_json()
+    goal_amount     = float(data.get("goal_amount", 0))
+    timeframe       = int(data.get("timeframe_months", 3))
+    income          = float(data.get("monthly_income", 0))
+    spending_cats   = data.get("monthly_spending", {})
+    history_context = data.get("history_context", "").strip()
 
     total_spend        = sum(spending_cats.values())
     monthly_surplus    = income - total_spend
@@ -58,9 +72,12 @@ def reality_check():
               f"Typical monthly spending (debit, excl. one-offs): ${total_spend:.0f} | "
               f"Net: ${monthly_surplus:+.0f}")
 
-    prompt = f"""Give practical, encouraging advice for this savings goal. Do NOT repeat the numbers — focus on what action to take.
+    history_block = f"{history_context}\n\n" if history_context else ""
 
-Goal: ${goal_amount:.0f} in {timeframe} month(s)
+    prompt = f"""Give practical, encouraging advice for this savings goal. Do NOT repeat the numbers — focus on what action to take.
+{_REALITY_CHECK_EXAMPLE}
+NOW ADVISE ON THIS REAL GOAL:
+{history_block}Goal: ${goal_amount:.0f} in {timeframe} month(s)
 Finances: {ledger}
 {advice_context}
 Top typical spending categories: {cat_text}
@@ -97,11 +114,12 @@ def _min_floor(category: str, current: float) -> float:
 
 @savings_bp.route("/plan", methods=["POST"])
 def create_savings_plan():
-    data          = request.get_json()
-    goal_amount   = float(data.get("goal_amount", 0))
-    timeframe     = int(data.get("timeframe_months", 3))
-    income        = float(data.get("monthly_income", 0))
-    spending_cats = data.get("monthly_spending", {})
+    data            = request.get_json()
+    goal_amount     = float(data.get("goal_amount", 0))
+    timeframe       = int(data.get("timeframe_months", 3))
+    income          = float(data.get("monthly_income", 0))
+    spending_cats   = data.get("monthly_spending", {})
+    history_context = data.get("history_context", "").strip()
 
     required_per_month = goal_amount / timeframe if timeframe > 0 else goal_amount
     total_spend        = sum(spending_cats.values())
@@ -114,9 +132,12 @@ def create_savings_plan():
     cat_text = "\n".join(f"- {k}: ${v:.0f}/mo" for k, v in all_disc)
 
     surplus_label = "surplus" if monthly_surplus >= 0 else "deficit"
-    prompt = f"""Create a realistic savings plan: ${goal_amount:.0f} in {timeframe} month(s).
+    history_block = f"{history_context}\n\n" if history_context else ""
 
-Monthly income (credit): ${income:.0f} | Typical monthly spending (debit, excl. one-offs): ${total_spend:.0f} | Net {surplus_label}: ${abs(monthly_surplus):.0f} | Need to save: ${required_per_month:.0f}/mo
+    prompt = f"""Create a realistic savings plan: ${goal_amount:.0f} in {timeframe} month(s).
+{_SAVINGS_PLAN_EXAMPLE}
+NOW CREATE THE REAL PLAN:
+{history_block}Monthly income (credit): ${income:.0f} | Typical monthly spending (debit, excl. one-offs): ${total_spend:.0f} | Net {surplus_label}: ${abs(monthly_surplus):.0f} | Need to save: ${required_per_month:.0f}/mo
 All typical discretionary spending categories:
 {cat_text}
 

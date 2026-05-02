@@ -47,10 +47,10 @@ public class AiService {
         Map<String, Object> summary = buildRangeSummary(userId, startMonth, end, user);
 
         String label = startMonth.equals(end) ? startMonth : startMonth + " to " + end;
-        Map<String, Object> body = Map.of(
-                "month",   label,
-                "summary", summary
-        );
+        Map<String, Object> body = new HashMap<>();
+        body.put("month",           label);
+        body.put("summary",         summary);
+        body.put("history_context", buildUserHistoryContext(userId));
 
         long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/story", body, Map.class);
@@ -133,12 +133,12 @@ public class AiService {
         double income = getActualMonthlyIncome(userId, startMonth, endMonth, user);
         TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
-        Map<String, Object> body = Map.of(
-                "goal_amount",       req.getGoalAmount(),
-                "timeframe_months",  req.getTimeframeMonths(),
-                "monthly_income",    income,
-                "monthly_spending",  categories
-        );
+        Map<String, Object> body = new HashMap<>();
+        body.put("goal_amount",      req.getGoalAmount());
+        body.put("timeframe_months", req.getTimeframeMonths());
+        body.put("monthly_income",   income);
+        body.put("monthly_spending", categories);
+        body.put("history_context",  buildUserHistoryContext(userId));
 
         long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/reality-check", body, Map.class);
@@ -163,12 +163,12 @@ public class AiService {
         double income = getActualMonthlyIncome(userId, startMonth, endMonth, user);
         TimingContext.record("db_ms", System.currentTimeMillis() - dbStart);
 
-        Map<String, Object> body = Map.of(
-                "goal_amount",       req.getGoalAmount(),
-                "timeframe_months",  req.getTimeframeMonths(),
-                "monthly_income",    income,
-                "monthly_spending",  categories
-        );
+        Map<String, Object> body = new HashMap<>();
+        body.put("goal_amount",      req.getGoalAmount());
+        body.put("timeframe_months", req.getTimeframeMonths());
+        body.put("monthly_income",   income);
+        body.put("monthly_spending", categories);
+        body.put("history_context",  buildUserHistoryContext(userId));
 
         long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/plan", body, Map.class);
@@ -190,16 +190,41 @@ public class AiService {
 
         Map<String, Object> context = buildRangeSummary(userId, startMonth, endMonth, user);
 
+        // Add month-by-month history so Python can build trend/line charts
+        long histStart = System.currentTimeMillis();
+        List<String> histMonths = transactionRepository.findDistinctMonthsByUserId(userId)
+                .stream().limit(6).sorted().collect(Collectors.toList());
+        Set<String> excl = Set.of("Income", "Transfer");
+        List<Map<String, Object>> monthlyHistory = new ArrayList<>();
+        for (String m : histMonths) {
+            List<Object[]> rows = transactionRepository.getCategorySummaryForMonth(userId, m);
+            double total = rows.stream()
+                    .filter(r -> r[0] == null || !excl.contains((String) r[0]))
+                    .mapToDouble(r -> ((Number) r[1]).doubleValue()).sum();
+            Double inc = transactionRepository.getCreditTotalForRange(userId, m, m);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("month", m);
+            entry.put("total", Math.round(total * 100.0) / 100.0);
+            if (inc != null) entry.put("income", Math.round(inc * 100.0) / 100.0);
+            monthlyHistory.add(entry);
+        }
+        TimingContext.record("db_ms", System.currentTimeMillis() - histStart);
+        context.put("monthly_history", monthlyHistory);
+
         Map<String, Object> body = new HashMap<>();
-        body.put("message",  req.getMessage());
-        body.put("context",  context);
-        body.put("history",  req.getHistory() != null ? req.getHistory() : List.of());
+        body.put("message",         req.getMessage());
+        body.put("context",         context);
+        body.put("history",         req.getHistory() != null ? req.getHistory() : List.of());
+        body.put("history_context", buildUserHistoryContext(userId));
 
         long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/chat", body, Map.class);
         TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
-        String reply = resp != null ? (String) resp.get("reply") : "I'm unable to respond right now.";
-        return Map.<String, Object>of("reply", reply);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("reply", resp != null ? (String) resp.get("reply") : "I'm unable to respond right now.");
+        if (resp != null && resp.get("chart") != null) result.put("chart", resp.get("chart"));
+        return result;
     }
 
     // ─── UC13: Merchant Explainer ─────────────────────────────────────────────
@@ -351,5 +376,67 @@ public class AiService {
         String[] s = startMonth.split("-"), e = endMonth.split("-");
         return Math.max(1, (long)(Integer.parseInt(e[0]) - Integer.parseInt(s[0])) * 12
                 + (Integer.parseInt(e[1]) - Integer.parseInt(s[1])) + 1);
+    }
+
+    private String buildUserHistoryContext(Long userId) {
+        try {
+            List<String> months = transactionRepository.findDistinctMonthsByUserId(userId)
+                    .stream().limit(6).sorted().collect(Collectors.toList());
+            if (months.isEmpty()) return "";
+
+            String histStart = months.get(0);
+            String histEnd   = months.get(months.size() - 1);
+            long   numMonths = Math.max(1, months.size());
+
+            Set<String> excluded = Set.of("Income", "Transfer");
+            List<Object[]> catRows = transactionRepository
+                    .getCategorySummaryForRangeNormal(userId, histStart, histEnd);
+            Map<String, Double> catAvgs = new LinkedHashMap<>();
+            for (Object[] row : catRows) {
+                String cat = row[0] != null ? (String) row[0] : "Other";
+                if (!excluded.contains(cat))
+                    catAvgs.put(cat, ((Number) row[1]).doubleValue() / numMonths);
+            }
+            double totalAvg = catAvgs.values().stream().mapToDouble(Double::doubleValue).sum();
+
+            Double creditTotal = transactionRepository.getCreditTotalForRange(userId, histStart, histEnd);
+            double incomeAvg = (creditTotal != null && creditTotal > 0) ? creditTotal / numMonths : 0.0;
+
+            String trendLabel = "stable";
+            if (months.size() >= 4) {
+                int mid = months.size() / 2;
+                double firstAvg = sumSpendForMonths(userId, months.subList(0, mid), excluded)
+                        / Math.max(1, mid);
+                double secondAvg = sumSpendForMonths(userId, months.subList(mid, months.size()), excluded)
+                        / Math.max(1, months.size() - mid);
+                if (secondAvg > firstAvg * 1.08)      trendLabel = "worsening (spending up)";
+                else if (secondAvg < firstAvg * 0.92) trendLabel = "improving (spending down)";
+            }
+
+            String topCats = catAvgs.entrySet().stream()
+                    .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                    .limit(5)
+                    .map(e -> e.getKey() + " $" + String.format("%.0f", e.getValue()))
+                    .collect(Collectors.joining(", "));
+
+            return String.format(
+                    "=== 6-MONTH HISTORY (%s to %s) ===\n" +
+                    "Avg monthly spend: $%.0f | Avg monthly income: $%.0f | Trend: %s\n" +
+                    "Top categories (monthly avg): %s\n" +
+                    "=== END HISTORY ===",
+                    histStart, histEnd, totalAvg, incomeAvg, trendLabel, topCats);
+
+        } catch (Exception e) {
+            log.warn("Failed to build history context for user {}: {}", userId, e.getMessage());
+            return "";
+        }
+    }
+
+    private double sumSpendForMonths(Long userId, List<String> months, Set<String> excluded) {
+        return months.stream().mapToDouble(m ->
+            transactionRepository.getCategorySummaryForMonth(userId, m).stream()
+                .filter(r -> r[0] == null || !excluded.contains((String) r[0]))
+                .mapToDouble(r -> ((Number) r[1]).doubleValue()).sum()
+        ).sum();
     }
 }

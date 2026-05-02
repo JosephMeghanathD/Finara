@@ -21,9 +21,9 @@ def _base_options(temperature: float, num_ctx: int, num_predict: int) -> dict:
         "num_thread":     NUM_THREAD,
         "num_ctx":        num_ctx,
         "num_predict":    num_predict,
-        "repeat_penalty": 1.1,
-        "top_p":          0.9,
-        "top_k":          40,
+        "repeat_penalty": 1.15,
+        "top_p":          0.88,
+        "top_k":          35,
     }
 
 
@@ -56,7 +56,7 @@ def ask_gemma(
         resp = requests.post(
             f"{OLLAMA_BASE_URL}/api/chat",
             json=payload,
-            timeout=180
+            timeout=250
         )
         if not resp.ok:
             try:
@@ -97,7 +97,7 @@ def ask_gemma_chat(
         resp = requests.post(
             f"{OLLAMA_BASE_URL}/api/chat",
             json=payload,
-            timeout=180
+            timeout=250
         )
         if not resp.ok:
             try:
@@ -147,7 +147,7 @@ def ask_gemma_json(
         resp = requests.post(
             f"{OLLAMA_BASE_URL}/api/chat",
             json=payload,
-            timeout=180,
+            timeout=250,
         )
         if not resp.ok:
             raise RuntimeError(f"Ollama error ({resp.status_code}): {resp.text}")

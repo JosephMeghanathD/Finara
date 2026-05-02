@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { txnApi, aiApi } from '../utils/api'
 import { useTimeFilter } from '../hooks/useTimeFilter'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts'
 import { ArrowDownRight, ArrowUpRight, HelpCircle, AlertTriangle, Info, Flag, FlagOff, Pencil, Trash2, Plus, X } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import AiText from '../components/AiText'
@@ -202,6 +202,63 @@ export default function TransactionsPage() {
   debits.forEach(t => { const c = t.category||'Uncategorized'; chartMap[c]=(chartMap[c]||0)+parseFloat(t.amount) })
   const chartData = Object.entries(chartMap).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}))
 
+  const dailyMap = {}
+  debits.forEach(t => {
+    if (!dailyMap[t.transactionDate]) dailyMap[t.transactionDate] = { spent: 0, income: 0 }
+    dailyMap[t.transactionDate].spent += parseFloat(t.amount)
+  })
+  credits.forEach(t => {
+    if (!dailyMap[t.transactionDate]) dailyMap[t.transactionDate] = { spent: 0, income: 0 }
+    dailyMap[t.transactionDate].income += parseFloat(t.amount)
+  })
+  const dailyData = Object.entries(dailyMap)
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([date, v]) => ({
+      date, label: format(parseISO(date), 'MMM d'),
+      spent: Math.round(v.spent*100)/100,
+      income: Math.round(v.income*100)/100,
+    }))
+
+  // Choose aggregation based on range width
+  const [sy, sm] = (startMonth||'2026-01').split('-').map(Number)
+  const [ey, em] = (endMonth||startMonth||'2026-01').split('-').map(Number)
+  const numMonths = (ey - sy) * 12 + (em - sm) + 1
+  const aggLevel = numMonths <= 1 ? 'day' : numMonths <= 3 ? 'week' : 'month'
+
+  const bucketKey = dateStr => {
+    if (aggLevel === 'day') return dateStr
+    if (aggLevel === 'month') return dateStr.slice(0, 7)
+    // ISO week: find Monday of that week
+    const d = new Date(dateStr + 'T00:00:00')
+    const day = d.getDay()
+    const offset = day === 0 ? -6 : 1 - day
+    d.setDate(d.getDate() + offset)
+    return d.toISOString().slice(0, 10)
+  }
+  const bucketLabel = key => {
+    if (aggLevel === 'day')   return format(parseISO(key), 'MMM d')
+    if (aggLevel === 'month') return format(parseISO(key + '-01'), 'MMM yy')
+    return 'Wk ' + format(parseISO(key), 'MMM d')
+  }
+
+  const aggMap = {}
+  dailyData.forEach(({ date, spent, income }) => {
+    const k = bucketKey(date)
+    if (!aggMap[k]) aggMap[k] = { spent: 0, income: 0 }
+    aggMap[k].spent  += spent
+    aggMap[k].income += income
+  })
+  const aggData = Object.entries(aggMap)
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([k, v]) => ({
+      label: bucketLabel(k),
+      spent:  Math.round(v.spent*100)/100,
+      income: Math.round(v.income*100)/100,
+    }))
+
+  const aggAvg = aggData.length > 0 ? aggData.reduce((s, d) => s + d.spent, 0) / aggData.length : 0
+  const aggLevelLabel = aggLevel === 'day' ? 'daily' : aggLevel === 'week' ? 'weekly' : 'monthly'
+
   const filtered = txns.filter(t => {
     const ok = typeFilter==='All' || (typeFilter==='Credit'&&isCredit(t)) || (typeFilter==='Debit'&&!isCredit(t))
     const q  = search.toLowerCase()
@@ -277,6 +334,54 @@ export default function TransactionsPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {aggData.length > 1 && (
+        <div className="card">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold" style={{ color:'var(--text)' }}>Spending &amp; income</h3>
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:'var(--surface-2)', color:'var(--text-3)', border:'1px solid var(--border)' }}>
+                {aggLevelLabel}
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-xs" style={{ color:'var(--text-3)' }}>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-5 h-0.5 rounded" style={{ background:'#6366F1' }}/>
+                Spending
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-5 h-0.5 rounded" style={{ background:'#10B981' }}/>
+                Income
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-5 border-t border-dashed" style={{ borderColor:'#F59E0B' }}/>
+                Avg ${fmtAmt(aggAvg)}/{aggLevel}
+              </span>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={aggData} margin={{ left: 0, right: 12, top: 4, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--text-3)' }} axisLine={false} tickLine={false}
+                interval={aggData.length > 20 ? Math.floor(aggData.length/10) : 'preserveStartEnd'} />
+              <YAxis tick={{ fontSize: 10, fill: 'var(--text-3)' }} axisLine={false} tickLine={false}
+                tickFormatter={v => `$${v>=1000?(v/1000).toFixed(0)+'k':v}`} width={38} />
+              <Tooltip
+                formatter={(v, name) => [`$${fmtAmt(v)}`, name === 'spent' ? 'Spending' : 'Income']}
+                contentStyle={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, fontSize:12, color:'var(--text)' }}
+                itemStyle={{ color:'var(--text)' }} labelStyle={{ color:'var(--text-2)', marginBottom:2 }}
+              />
+              <ReferenceLine y={aggAvg} stroke="#F59E0B" strokeDasharray="4 3" strokeWidth={1.5} />
+              <Line type="monotone" dataKey="spent" stroke="#6366F1" strokeWidth={2}
+                dot={aggData.length <= 20 ? { r: 3, fill: '#6366F1', strokeWidth: 0 } : false}
+                activeDot={{ r: 5, fill: '#6366F1', strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="income" stroke="#10B981" strokeWidth={2}
+                dot={aggData.length <= 20 ? { r: 3, fill: '#10B981', strokeWidth: 0 } : false}
+                activeDot={{ r: 5, fill: '#10B981', strokeWidth: 0 }} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       )}
 

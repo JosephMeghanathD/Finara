@@ -8,6 +8,12 @@ from utils.gemma_client import ask_gemma_json
 
 insights_bp = Blueprint("insights", __name__)
 
+_COMPARE_EXAMPLE = """
+EXAMPLE (do not copy these numbers):
+Input: Jan: spent $3,100 | income $4,200 | Dining $680. Feb: spent $3,580 | income $4,200 | Dining $890.
+Expected JSON: {"insights": "Spending jumped $480 from January to February, almost entirely driven by Dining which rose $210 (31%) — income held steady so net surplus dropped by nearly half.", "biggest_increase": {"category": "Dining", "change_pct": 31}, "biggest_decrease": {"category": "Entertainment", "change_pct": -12}, "overall_trend": "worsening"}
+"""
+
 
 @insights_bp.route("/compare", methods=["POST"])
 def compare_months():
@@ -38,7 +44,8 @@ def compare_months():
     table_text = "\n".join(rows)
 
     prompt = f"""Compare spending and income across months and identify key changes.
-
+{_COMPARE_EXAMPLE}
+NOW ANALYZE THE REAL DATA:
 {table_text}
 
 Reply JSON:
