@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { txnApi, aiApi } from '../utils/api'
 import { useTimeFilter } from '../hooks/useTimeFilter'
-import { AlertTriangle, HelpCircle, ChevronRight, Sparkles, Info, RefreshCw } from 'lucide-react'
+import { AlertTriangle, HelpCircle, ChevronRight, Sparkles, Info, RefreshCw, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import AiText from '../components/AiText'
 import AiLoader, { FianaApiLoader } from '../components/AiLoader'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 export default function AnomaliesPage() {
   const { startDate, endDate } = useTimeFilter()
@@ -16,6 +17,7 @@ export default function AnomaliesPage() {
   const [merchantCache, setMerchantCache] = useState({})
   const [merchantLoading, setMerchantLoading] = useState(null)
   const [openMerchant, setOpenMerchant]   = useState(null)
+  const [confirmTxn, setConfirmTxn]       = useState(null)
 
   useEffect(() => {
     if (!startDate || !endDate) return
@@ -45,6 +47,15 @@ export default function AnomaliesPage() {
       setAnomalies(r.data)
     } catch { toast.error("Fiana's scan hit a snag — is the ML service up?") }
     finally { setRechecking(false) }
+  }
+
+  const handleDelete = async (txn) => {
+    try {
+      await txnApi.delete(txn.id)
+      setAnomalies(prev => prev.filter(t => t.id !== txn.id))
+      toast.success('Transaction deleted')
+    } catch { toast.error('Failed to delete') }
+    finally { setConfirmTxn(null) }
   }
 
   const explain = async (txn) => {
@@ -132,13 +143,23 @@ export default function AnomaliesPage() {
                   )}
                 </div>
               </div>
-              <button onClick={() => explain(txn)} disabled={explaining === txn.id}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg flex-shrink-0 font-medium transition-all"
-                style={{ background:'var(--brand-light)', color:'var(--brand)',
-                  border:'1px solid rgba(99,102,241,0.2)', opacity: explaining===txn.id ? 0.6 : 1 }}>
-                <HelpCircle size={12} />
-                {explaining===txn.id ? 'Asking…' : 'Ask why?'}
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button onClick={() => explain(txn)} disabled={explaining === txn.id}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
+                  style={{ background:'var(--brand-light)', color:'var(--brand)',
+                    border:'1px solid rgba(99,102,241,0.2)', opacity: explaining===txn.id ? 0.6 : 1 }}>
+                  <HelpCircle size={12} />
+                  {explaining===txn.id ? 'Asking…' : 'Ask why?'}
+                </button>
+                <button onClick={() => setConfirmTxn(txn)}
+                  title="Delete transaction"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
+                  style={{ background:'var(--surface-2)', border:'1px solid var(--border)', color:'var(--text-3)' }}
+                  onMouseEnter={e => { e.currentTarget.style.color='#f87171'; e.currentTarget.style.borderColor='rgba(248,113,113,0.4)' }}
+                  onMouseLeave={e => { e.currentTarget.style.color='var(--text-3)'; e.currentTarget.style.borderColor='var(--border)' }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
             </div>
 
             {openMerchant === txn.id && (
@@ -181,6 +202,16 @@ export default function AnomaliesPage() {
           </div>
         ))}
       </div>
+
+      {confirmTxn && (
+        <ConfirmDialog
+          title="Delete transaction?"
+          message={`"${confirmTxn.description}" on ${confirmTxn.transactionDate} will be permanently removed.`}
+          confirmLabel="Delete"
+          onConfirm={() => handleDelete(confirmTxn)}
+          onCancel={() => setConfirmTxn(null)}
+        />
+      )}
     </div>
   )
 }

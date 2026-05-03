@@ -537,6 +537,7 @@ public class TransactionService {
 
     // ─── CRUD ─────────────────────────────────────────────────────────────────
 
+    @Transactional
     @Caching(evict = {
         @CacheEvict(value = "months",    key = "#userId"),
         @CacheEvict(value = "summaries", allEntries = true),
@@ -565,10 +566,9 @@ public class TransactionService {
             categorize(new ArrayList<>(List.of(txn)));
         }
 
-        // Run anomaly detection with existing month data for context
-        String month = txn.getTransactionDate().toString().substring(0, 7);
-        List<Transaction> monthTxns = transactionRepository.findByUserIdAndMonth(userId, month);
-        List<Transaction> combined = new ArrayList<>(monthTxns);
+        // Run anomaly detection with all user history as context (ML needs ≥5 samples)
+        List<Transaction> allTxns = transactionRepository.findByUserIdOrderByTransactionDateDesc(userId);
+        List<Transaction> combined = new ArrayList<>(allTxns);
         combined.add(txn);
         detectAnomalies(combined);
 

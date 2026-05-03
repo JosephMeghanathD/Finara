@@ -16,6 +16,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(exclude = "user")
+@ToString(exclude = "user")
 public class Transaction {
 
     @Id
