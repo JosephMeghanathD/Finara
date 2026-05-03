@@ -7,6 +7,7 @@ import {
 } from 'recharts'
 import { FianaApiLoader } from './AiLoader'
 import { TrendingUp } from 'lucide-react'
+import InfoTooltip from './InfoTooltip'
 
 const TOOLTIP_STYLE = {
   background: '#1E293B', border: '1px solid rgba(255,255,255,0.1)',
@@ -82,6 +83,9 @@ export default function RangeForecastCard({
           <div className="flex items-center gap-2">
             <TrendingUp size={14} style={{ color: 'var(--brand)' }} />
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{title}</h3>
+            <InfoTooltip
+              content="ML forecast using Exponential Smoothing. Amber line = predicted daily spend. Shaded area = confidence band (±1 SD). Blue bars = actual spend (when available)."
+            />
           </div>
           {data && (
             <div className="flex items-center gap-3 flex-wrap">

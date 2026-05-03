@@ -5,6 +5,8 @@ import { PiggyBank, CheckCircle, XCircle, Sparkles, TrendingDown, ChevronDown, S
 import AiText from '../components/AiText'
 import AiLoader, { FianaApiLoader } from '../components/AiLoader'
 import toast from 'react-hot-toast'
+import ScrollFade from '../components/ScrollFade'
+import InfoTooltip from '../components/InfoTooltip'
 
 const inputStyle = {
   background: 'var(--surface-2)', border: '1px solid var(--border)',
@@ -65,22 +67,31 @@ export default function SavingsPage() {
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   return (
-    <div className="space-y-5 max-w-2xl">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Savings Planner</h2>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
-            Set a goal — Fiana checks if it's realistic and builds a plan
-          </p>
+    <div className="space-y-5">
+      <ScrollFade delay={0}>
+        <div className="flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Savings Planner</h2>
+              <InfoTooltip
+                title="Savings Planner"
+                content="Reality check: compares your goal against your average monthly surplus (income − spending). Savings plan: Gemma 3 AI suggests specific category cuts to reach your goal."
+              />
+            </div>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
+              Set a goal — Fiana checks if it's realistic and builds a plan
+            </p>
+          </div>
+          <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5 flex-shrink-0"
+            style={{ background: 'var(--brand-light)', color: 'var(--brand)',
+              border: '1px solid rgba(99,102,241,0.2)' }}>
+            <Sparkles size={11} /> Fiana AI
+          </span>
         </div>
-        <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5 flex-shrink-0"
-          style={{ background: 'var(--brand-light)', color: 'var(--brand)',
-            border: '1px solid rgba(99,102,241,0.2)' }}>
-          <Sparkles size={11} /> Fiana AI
-        </span>
-      </div>
+      </ScrollFade>
 
-      <div className="card space-y-4">
+      <ScrollFade delay={80}>
+      <div className="card space-y-4 card-i">
         <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Your savings goal</h3>
 
         <div className="grid grid-cols-2 gap-4">
@@ -117,11 +128,13 @@ export default function SavingsPage() {
           </button>
         </div>
       </div>
+      </ScrollFade>
 
       {loadingCheck && <AiLoader type="reality" title="Fiana · Reality Check" />}
 
       {!loadingCheck && check && (
-        <div className="card">
+        <ScrollFade delay={40}>
+        <div className="card card-i">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
               style={{ background: check.is_realistic ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)' }}>
@@ -175,12 +188,14 @@ export default function SavingsPage() {
             </div>
           </div>
         </div>
+        </ScrollFade>
       )}
 
       {loadingPlan && <AiLoader type="savings" title="Fiana · Savings Plan" />}
 
       {!loadingPlan && plan && (
-        <div className="card">
+        <ScrollFade delay={40}>
+        <div className="card card-i">
           <div className="flex items-center gap-3 mb-5">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
               style={{ background: 'var(--brand-light)' }}>
@@ -260,6 +275,7 @@ export default function SavingsPage() {
             </div>
           )}
         </div>
+        </ScrollFade>
       )}
     </div>
   )

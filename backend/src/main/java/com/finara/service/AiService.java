@@ -295,7 +295,22 @@ public class AiService {
         long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/coach", body, Map.class);
         TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
-        return resp != null ? resp : Map.of("tips", List.of("No tips available right now."));
+
+        if (resp == null) return Map.of("tips", List.of("No tips available right now."));
+
+        String topCategory = categories.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey).orElse("");
+        Map<String, Object> result = new HashMap<>(resp);
+        result.put("context", Map.of(
+                "total",        weekTotal,
+                "vs_avg_pct",   vsAvgPct,
+                "income",       weekIncome,
+                "week_start",   monday.toString(),
+                "week_end",     sunday.toString(),
+                "top_category", topCategory
+        ));
+        return result;
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

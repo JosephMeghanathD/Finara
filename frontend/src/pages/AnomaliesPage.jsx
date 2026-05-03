@@ -6,6 +6,8 @@ import toast from 'react-hot-toast'
 import AiText from '../components/AiText'
 import AiLoader, { FianaApiLoader } from '../components/AiLoader'
 import ConfirmDialog from '../components/ConfirmDialog'
+import ScrollFade from '../components/ScrollFade'
+import InfoTooltip from '../components/InfoTooltip'
 
 export default function AnomaliesPage() {
   const { startDate, endDate } = useTimeFilter()
@@ -69,29 +71,37 @@ export default function AnomaliesPage() {
   }
 
   return (
-    <div className="space-y-5 max-w-3xl">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Unusual Purchases</h2>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
-            ML flagged these as outside your normal spending patterns
-          </p>
+    <div className="space-y-5">
+      <ScrollFade delay={0}>
+        <div className="flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Unusual Purchases</h2>
+              <InfoTooltip
+                title="Anomaly Detection"
+                content="Transactions are flagged by an Isolation Forest ML model trained on your spending history. It scores each transaction by how much it deviates from your normal patterns — high scores = flagged."
+              />
+            </div>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
+              ML flagged these as outside your normal spending patterns
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5"
+              style={{ background: 'var(--brand-light)', color: 'var(--brand)',
+                border: '1px solid rgba(99,102,241,0.2)' }}>
+              <Sparkles size={11} /> Fiana AI
+            </span>
+            <button onClick={recheck} disabled={rechecking || !startDate}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
+              style={{ background: 'var(--surface)', color: 'var(--text-2)',
+                border: '1px solid var(--border)', opacity: rechecking ? 0.6 : 1 }}>
+              <RefreshCw size={11} className={rechecking ? 'animate-spin' : ''} />
+              {rechecking ? 'Rechecking…' : 'Recheck Anomalies'}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5"
-            style={{ background: 'var(--brand-light)', color: 'var(--brand)',
-              border: '1px solid rgba(99,102,241,0.2)' }}>
-            <Sparkles size={11} /> Fiana AI
-          </span>
-          <button onClick={recheck} disabled={rechecking || !startDate}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
-            style={{ background: 'var(--surface)', color: 'var(--text-2)',
-              border: '1px solid var(--border)', opacity: rechecking ? 0.6 : 1 }}>
-            <RefreshCw size={11} className={rechecking ? 'animate-spin' : ''} />
-            {rechecking ? 'Rechecking…' : 'Recheck Anomalies'}
-          </button>
-        </div>
-      </div>
+      </ScrollFade>
 
       {loading && <AiLoader type="anomaly" title="Fiana · Anomaly Detection" />}
 
@@ -107,8 +117,9 @@ export default function AnomaliesPage() {
       )}
 
       <div className="space-y-3">
-        {anomalies.map(txn => (
-          <div key={txn.id} className="card"
+        {anomalies.map((txn, i) => (
+          <ScrollFade key={txn.id} delay={i * 50}>
+          <div className="card card-i"
             style={{ borderColor:'rgba(245,158,11,0.25)', borderLeftWidth:3, borderLeftColor:'#F59E0B' }}>
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
@@ -200,6 +211,7 @@ export default function AnomaliesPage() {
               </div>
             )}
           </div>
+          </ScrollFade>
         ))}
       </div>
 

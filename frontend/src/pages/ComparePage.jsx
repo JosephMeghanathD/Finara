@@ -139,7 +139,7 @@ export default function ComparePage() {
       {!loading && reports.length >= 2 && (
         <>
           {/* ── Daily spending by day of month ───────────────────────── */}
-          <div className="card">
+          <div className="card card-i">
             <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Daily spending by day of month</h3>
             <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>Each line shows how much was spent on each day</p>
             <ResponsiveContainer width="100%" height={220}>
@@ -164,7 +164,7 @@ export default function ComparePage() {
           </div>
 
           {/* ── Monthly totals + trend ───────────────────────────────── */}
-          <div className="card">
+          <div className="card card-i">
             <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Total spending trend</h3>
             <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>How much you spent each month overall</p>
             <div className="flex gap-3 flex-wrap mb-5">
@@ -209,7 +209,7 @@ export default function ComparePage() {
           </div>
 
           {/* ── Spending by category (grouped bar) ──────────────────── */}
-          <div className="card">
+          <div className="card card-i">
             <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text)' }}>Spending by category</h3>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={chartData} barGap={4}>
@@ -235,7 +235,7 @@ export default function ComparePage() {
 
           {/* ── Biggest category movers ──────────────────────────────── */}
           {moversData.length > 0 && (
-            <div className="card">
+            <div className="card card-i">
               <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Biggest category movers</h3>
               <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
                 $ change from {reports[0]?.month} → {reports[reports.length - 1]?.month}
@@ -266,7 +266,7 @@ export default function ComparePage() {
           )}
 
           {/* ── Cumulative daily spend ───────────────────────────────── */}
-          <div className="card">
+          <div className="card card-i">
             <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Cumulative spend through the month</h3>
             <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>Running total — shows if spending is front-loaded or spread evenly</p>
             <ResponsiveContainer width="100%" height={220}>

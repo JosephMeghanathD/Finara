@@ -258,7 +258,7 @@ export default function ForecastPage() {
   }, [dailyForecast, isPastMonth, dailyActualByDay])
 
   const dailyFcCard = dailyFcData.length > 0 && (
-    <div className="card">
+    <div className="card card-i">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
         <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
           Daily forecast{isPastMonth ? ' vs actual' : ''}
@@ -466,7 +466,7 @@ export default function ForecastPage() {
             <>
               {/* Forecast vs Actual hero */}
               {heroTotal != null && (
-                <div className="card" style={{
+                <div className="card card-i" style={{
                   borderColor: heroTotal == null || actualTotal === 0 ? 'rgba(14,165,233,0.25)'
                     : actualTotal > heroTotal ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)',
                   background: heroTotal == null || actualTotal === 0 ? 'rgba(14,165,233,0.05)'
@@ -528,7 +528,7 @@ export default function ForecastPage() {
 
               {/* Cumulative daily chart with confidence band */}
               {dailyData.length > 0 && (
-                <div className="card">
+                <div className="card card-i">
                   <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>
                     Cumulative spend vs forecast trajectory
                   </h3>
@@ -591,7 +591,7 @@ export default function ForecastPage() {
 
               {/* Daily spending bars */}
               {dailyData.length > 0 && (
-                <div className="card">
+                <div className="card card-i">
                   <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>
                     Daily spending breakdown
                   </h3>
@@ -622,7 +622,7 @@ export default function ForecastPage() {
 
               {/* Category forecast vs actual table */}
               {categories.length > 0 && (
-                <div className="card">
+                <div className="card card-i">
                   <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text)' }}>
                     Category forecast vs actual
                   </h3>
@@ -696,7 +696,7 @@ export default function ForecastPage() {
             <>
               {/* Hero card */}
               {total != null && (
-                <div className="card" style={{ borderColor: 'rgba(99,102,241,0.2)', background: 'var(--brand-light)' }}>
+                <div className="card card-i" style={{ borderColor: 'rgba(99,102,241,0.2)', background: 'var(--brand-light)' }}>
                   <p className="text-sm font-medium" style={{ color: 'var(--text-3)' }}>
                     Projected total for {month}
                   </p>
@@ -728,7 +728,7 @@ export default function ForecastPage() {
 
               {/* Historical + forecast line chart */}
               {historyLine.length >= 2 && total != null && (
-                <div className="card">
+                <div className="card card-i">
                   <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>
                     Historical spending + forecast
                   </h3>
@@ -770,7 +770,7 @@ export default function ForecastPage() {
 
               {/* Category bar chart */}
               {barData.length > 0 && (
-                <div className="card">
+                <div className="card card-i">
                   <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>
                     Forecast by category
                   </h3>
@@ -810,7 +810,7 @@ export default function ForecastPage() {
 
               {/* Category breakdown rows */}
               {categories.length > 0 && (
-                <div className="card">
+                <div className="card card-i">
                   <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text)' }}>
                     Category breakdown
                   </h3>
@@ -908,7 +908,7 @@ export default function ForecastPage() {
       {viewMode === 'range' && (
         <div className="space-y-5">
           {/* Date pickers */}
-          <div className="card">
+          <div className="card card-i">
             <div className="flex flex-wrap items-center gap-4">
               <CalendarRange size={15} style={{ color: 'var(--brand)', flexShrink: 0 }} />
               <div className="flex flex-wrap items-center gap-3">
@@ -935,7 +935,7 @@ export default function ForecastPage() {
             <>
               {/* Hero card — backtest style for past ranges, standard for future */}
               {isRangePast && rangeActualTotal > 0 ? (
-                <div className="card" style={{
+                <div className="card card-i" style={{
                   borderColor: rangeActualTotal > rangeData.totalForecast ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)',
                   background:  rangeActualTotal > rangeData.totalForecast ? 'rgba(239,68,68,0.05)' : 'rgba(16,185,129,0.05)',
                 }}>
@@ -982,7 +982,7 @@ export default function ForecastPage() {
                   </div>
                 </div>
               ) : (
-                <div className="card" style={{ borderColor: 'rgba(99,102,241,0.2)', background: 'var(--brand-light)' }}>
+                <div className="card card-i" style={{ borderColor: 'rgba(99,102,241,0.2)', background: 'var(--brand-light)' }}>
                   <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-3)' }}>
                     Forecast for {rangeData.startDate} → {rangeData.endDate}
                   </p>
@@ -1007,7 +1007,7 @@ export default function ForecastPage() {
 
               {/* Per-day chart */}
               {rangeChartData.length > 0 && (
-                <div className="card">
+                <div className="card card-i">
                   <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>
                     {isRangePast && rangeActualTotal > 0 ? 'Forecast vs actual spend' : 'Day-by-day forecast'}
                   </h3>
@@ -1077,7 +1077,7 @@ export default function ForecastPage() {
 
               {/* Per-day table for small ranges */}
               {rangeChartData.length > 0 && rangeChartData.length <= 14 && (
-                <div className="card">
+                <div className="card card-i">
                   <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>Daily breakdown</h3>
                   <div className="space-y-1.5">
                     {rangeData.days.map(d => (

@@ -10,6 +10,8 @@ import RangeForecastCard from '../components/RangeForecastCard'
 import ConfirmDialog from '../components/ConfirmDialog'
 import toast from 'react-hot-toast'
 import { useCategories } from '../hooks/useCategories'
+import ScrollFade from '../components/ScrollFade'
+import InfoTooltip from '../components/InfoTooltip'
 
 const EMPTY_FORM = { description: '', amount: '', transactionDate: '', transactionType: 'DEBIT', category: '' }
 
@@ -304,46 +306,56 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Transactions</h2>
-        <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={() => { setEditingTxn(null); setModalOpen(true) }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
-            style={{ background: 'var(--brand)', color: 'white' }}>
-            <Plus size={14} /> Add Transaction
-          </button>
+      <ScrollFade delay={0}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Transactions</h2>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={() => { setEditingTxn(null); setModalOpen(true) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
+              style={{ background: 'var(--brand)', color: 'white' }}>
+              <Plus size={14} /> Add Transaction
+            </button>
+          </div>
         </div>
-      </div>
+      </ScrollFade>
 
       {txns.length > 0 && (
+        <ScrollFade delay={80}>
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-1 flex flex-col gap-3">
-            <div className="card flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-                  style={{ background:'rgba(239,68,68,0.1)' }}>
+            <div className="card stat-card card-i flex-1 flex flex-col gap-2" style={{ '--c': '#EF4444' }}>
+              <div className="flex items-center justify-between">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background:'rgba(239,68,68,0.22)' }}>
                   <ArrowDownRight size={14} style={{ color:'#EF4444' }} />
                 </div>
-                <span className="text-xs font-medium" style={{ color:'var(--text-3)' }}>Money out</span>
+                <InfoTooltip content="Total debits (spending) for the selected period. Excludes credit/incoming transactions." />
               </div>
-              <p className="text-xl font-bold" style={{ color:'var(--text)' }}>${fmtAmt(debitTotal)}</p>
-              <p className="text-xs mt-1" style={{ color:'var(--text-3)' }}>{debits.length} transactions</p>
+              <div>
+                <p className="stat-value">${fmtAmt(debitTotal)}</p>
+                <p className="text-xs font-medium mt-1" style={{ color:'var(--text-3)' }}>Money out</p>
+                <p className="text-xs mt-0.5" style={{ color:'rgba(239,68,68,0.6)', fontSize:'0.7rem' }}>{debits.length} transactions</p>
+              </div>
             </div>
-            <div className="card flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-                  style={{ background:'rgba(16,185,129,0.1)' }}>
+            <div className="card stat-card card-i flex-1 flex flex-col gap-2" style={{ '--c': '#10b981' }}>
+              <div className="flex items-center justify-between">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background:'rgba(16,185,129,0.22)' }}>
                   <ArrowUpRight size={14} style={{ color:'#10B981' }} />
                 </div>
-                <span className="text-xs font-medium" style={{ color:'var(--text-3)' }}>Money in</span>
+                <InfoTooltip content="Total credits (income, refunds, incoming transfers) for the selected period." />
               </div>
-              <p className="text-xl font-bold" style={{ color:'#34d399' }}>${fmtAmt(creditTotal)}</p>
-              <p className="text-xs mt-1" style={{ color:'var(--text-3)' }}>{credits.length} transactions</p>
+              <div>
+                <p className="stat-value" style={{ color:'#34d399' }}>${fmtAmt(creditTotal)}</p>
+                <p className="text-xs font-medium mt-1" style={{ color:'var(--text-3)' }}>Money in</p>
+                <p className="text-xs mt-0.5" style={{ color:'rgba(16,185,129,0.6)', fontSize:'0.7rem' }}>{credits.length} transactions</p>
+              </div>
             </div>
           </div>
 
-          <div className="card col-span-2">
-            <h3 className="text-sm font-semibold mb-3" style={{ color:'var(--text)' }}>Spending by category</h3>
+          <div className="card col-span-2 card-i">
+            <div className="flex items-center gap-1.5 mb-3">
+              <h3 className="text-sm font-semibold" style={{ color:'var(--text)' }}>Spending by category</h3>
+              <InfoTooltip content="Debit transactions grouped by category. Categories auto-assigned by our TF-IDF + Logistic Regression ML model. Pie shows proportional split." />
+            </div>
             <div className="flex gap-4">
               <ResponsiveContainer width={140} height={140}>
                 <PieChart>
@@ -372,16 +384,19 @@ export default function TransactionsPage() {
             </div>
           </div>
         </div>
+        </ScrollFade>
       )}
 
       {aggData.length > 1 && (
-        <div className="card">
+        <ScrollFade delay={60}>
+        <div className="card card-i">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold" style={{ color:'var(--text)' }}>Spending &amp; income</h3>
               <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:'var(--surface-2)', color:'var(--text-3)', border:'1px solid var(--border)' }}>
                 {aggLevelLabel}
               </span>
+              <InfoTooltip content={`${aggLevelLabel.charAt(0).toUpperCase()+aggLevelLabel.slice(1)} spending (purple) vs income (green). Dashed amber line = average ${aggLevel} spend. Aggregation auto-adjusts: daily ≤1 month, weekly ≤3 months, monthly otherwise.`} />
             </div>
             <div className="flex items-center gap-4 text-xs" style={{ color:'var(--text-3)' }}>
               <span className="flex items-center gap-1.5">
@@ -420,19 +435,23 @@ export default function TransactionsPage() {
             </LineChart>
           </ResponsiveContainer>
         </div>
+        </ScrollFade>
       )}
 
       {startDate && endDate && debits.length > 0 && (
-        <RangeForecastCard
-          startDate={startDate}
-          endDate={endDate}
-          actualByDay={actualByDay}
-          title="Forecast vs actual spend"
-          compact
-        />
+        <ScrollFade delay={60}>
+          <RangeForecastCard
+            startDate={startDate}
+            endDate={endDate}
+            actualByDay={actualByDay}
+            title="Forecast vs actual spend"
+            compact
+          />
+        </ScrollFade>
       )}
 
-      <div className="card">
+      <ScrollFade delay={80}>
+      <div className="card card-i">
         <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <div className="flex items-center gap-1 p-0.5 rounded-lg border"
             style={{ background:'var(--surface-2)', borderColor:'var(--border)' }}>
@@ -624,6 +643,7 @@ export default function TransactionsPage() {
           </div>
         )}
       </div>
+      </ScrollFade>
 
       {modalOpen && (
         <TxnModal

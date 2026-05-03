@@ -9,6 +9,8 @@ import AiText from '../components/AiText'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Cell, LabelList,
 } from 'recharts'
+import ScrollFade from '../components/ScrollFade'
+import InfoTooltip from '../components/InfoTooltip'
 
 const fmtDollar = v =>
   `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -127,10 +129,17 @@ export default function BudgetPage() {
     }))
 
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="space-y-5">
+      <ScrollFade delay={0}>
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Budget Tracker</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Budget Tracker</h2>
+            <InfoTooltip
+              title="Budget Tracker"
+              content="Set spending limits per category. The 'vs Actual' tab compares your budgeted amounts against real spending fetched from your transactions. AI analysis is powered by Gemma 3."
+            />
+          </div>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>Set monthly budgets and track actuals</p>
         </div>
         <div className="flex items-center gap-2 ml-auto">
@@ -146,7 +155,9 @@ export default function BudgetPage() {
           </select>
         </div>
       </div>
+      </ScrollFade>
 
+      <ScrollFade delay={60}>
       <div className="flex gap-1 p-1 rounded-lg w-fit"
         style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
         {[['set','Set budget'],['compare','vs Actual']].map(([t,l]) => (
@@ -159,17 +170,22 @@ export default function BudgetPage() {
           </button>
         ))}
       </div>
+      </ScrollFade>
 
       {/* ── SET TAB ──────────────────────────────────────────────────────── */}
       {tab === 'set' && (
         <div className="space-y-4">
           {/* Running total + income context */}
           {(totalActual > 0 || totalBudgeted > 0 || income > 0) && (
+            <ScrollFade delay={80}>
             <div className="flex gap-3 flex-wrap">
               {totalActual > 0 && (
-                <div className="flex-1 min-w-[140px] px-4 py-3 rounded-xl"
+                <div className="flex-1 min-w-[140px] px-4 py-3 rounded-xl card-i"
                   style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>Spent this month</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>Spent this month</p>
+                    <InfoTooltip content="Total debit transactions in this calendar month, from your uploaded transaction data." />
+                  </div>
                   <p className="text-xl font-semibold mt-0.5"
                     style={{ color: totalBudgeted > 0 && totalActual > totalBudgeted ? '#f87171' : 'var(--text)' }}>
                     {fmtDollar(totalActual)}
@@ -218,7 +234,10 @@ export default function BudgetPage() {
                     background: totalBudgeted > income ? 'rgba(239,68,68,0.06)' : 'rgba(74,222,128,0.06)',
                     border: `1px solid ${totalBudgeted > income ? 'rgba(239,68,68,0.2)' : 'rgba(74,222,128,0.2)'}`,
                   }}>
-                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>Budget vs income</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>Budget vs income</p>
+                    <InfoTooltip content="How much of your monthly income is covered by your total budget. Positive = income exceeds budget. Negative = you've budgeted more than you earn." />
+                  </div>
                   <p className="text-xl font-semibold mt-0.5"
                     style={{ color: totalBudgeted > income ? '#f87171' : '#4ade80' }}>
                     {totalBudgeted > income ? '−' : '+'}{fmtDollar(Math.abs(income - totalBudgeted))}
@@ -226,6 +245,7 @@ export default function BudgetPage() {
                 </div>
               )}
             </div>
+            </ScrollFade>
           )}
 
           <div className="card space-y-1">

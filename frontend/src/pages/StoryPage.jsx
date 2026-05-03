@@ -7,6 +7,8 @@ import AiText from '../components/AiText'
 import AiLoader, { FianaApiLoader } from '../components/AiLoader'
 import toast from 'react-hot-toast'
 import { format, parseISO } from 'date-fns'
+import ScrollFade from '../components/ScrollFade'
+import InfoTooltip from '../components/InfoTooltip'
 
 function fmtMonth(m) {
   try { return format(parseISO(m + '-01'), 'MMMM yyyy') } catch { return m }
@@ -59,21 +61,30 @@ export default function StoryPage() {
   }
 
   return (
-    <div className="space-y-5 max-w-2xl">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>My Financial Story</h2>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
-            Fiana reads your transactions and crafts a personal narrative
-          </p>
+    <div className="space-y-5">
+      <ScrollFade delay={0}>
+        <div className="flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>My Financial Story</h2>
+              <InfoTooltip
+                title="Financial Story"
+                content="Fiana uses Gemma 3 (local AI model via Ollama) to read your transaction data and write a human-readable narrative. No data leaves your machine."
+              />
+            </div>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
+              Fiana reads your transactions and crafts a personal narrative
+            </p>
+          </div>
+          <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5 flex-shrink-0"
+            style={{ background: 'var(--brand-light)', color: 'var(--brand)',
+              border: '1px solid rgba(99,102,241,0.2)' }}>
+            <Sparkles size={11} /> Fiana AI
+          </span>
         </div>
-        <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5 flex-shrink-0"
-          style={{ background: 'var(--brand-light)', color: 'var(--brand)',
-            border: '1px solid rgba(99,102,241,0.2)' }}>
-          <Sparkles size={11} /> Fiana AI
-        </span>
-      </div>
+      </ScrollFade>
 
+      <ScrollFade delay={80}>
       <div className="card flex items-center justify-end gap-4">
         <button onClick={() => generate(false)} disabled={loading || !startMonth}
           className="btn-primary flex items-center gap-2 flex-shrink-0">
@@ -84,11 +95,13 @@ export default function StoryPage() {
               : <><Sparkles size={15} /> Generate</>}
         </button>
       </div>
+      </ScrollFade>
 
       {loading && <AiLoader type="story" title="Fiana · AI Advisor" />}
 
       {story && !loading && (
-        <div className="card">
+        <ScrollFade delay={40}>
+        <div className="card card-i">
           <div className="flex items-center justify-between gap-4 mb-5">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -133,9 +146,11 @@ export default function StoryPage() {
             </button>
           </div>
         </div>
+        </ScrollFade>
       )}
 
       {!story && !loading && (
+        <ScrollFade delay={60}>
         <div className="card text-center py-14">
           <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center"
             style={{ background: 'var(--brand-light)' }}>
@@ -155,6 +170,7 @@ export default function StoryPage() {
             </>
           )}
         </div>
+        </ScrollFade>
       )}
     </div>
   )

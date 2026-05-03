@@ -272,17 +272,36 @@ def spending_coach():
         header_parts.append(f"Income received: ${income:.0f} | Net this week: ${net:+.0f}")
     fin_header = "\n".join(header_parts)
 
-    prompt = f"""Give 3 specific, actionable money tips based on this week's spending.
+    prompt = f"""Give 5 specific, actionable money tips based on this week's spending.
 
 {fin_header}
 {cat_text}
 
-Each tip must mention a specific dollar amount from the data above.
-Reply JSON: {{"tips": ["tip1", "tip2", "tip3"]}}"""
+Rules:
+- Each tip must mention a specific dollar amount from the data above.
+- For each tip assign: category (Reduce, Save, Habit, Goal, or Warning), impact (high, medium, or low), and a how_to action step (one short sentence, max 12 words).
+
+Reply only with JSON in this exact format:
+{{"tips": [{{"text": "tip text", "category": "Reduce", "impact": "high", "how_to": "Set a $X weekly limit for this category."}}, ...]}}"""
 
     t0 = time.time()
-    result = ask_gemma_json(prompt, num_ctx=768, num_predict=240)
+    result = ask_gemma_json(prompt, num_ctx=1024, num_predict=650)
     gemma_ms = round((time.time() - t0) * 1000)
+
+    # Normalize: handle both old string format and new object format
+    raw_tips = result.get("tips", [])
+    normalized = []
+    for tip in raw_tips:
+        if isinstance(tip, str):
+            normalized.append({"text": tip, "category": "Tip", "impact": "medium", "how_to": ""})
+        elif isinstance(tip, dict):
+            normalized.append({
+                "text":     tip.get("text", str(tip)),
+                "category": tip.get("category", "Tip"),
+                "impact":   tip.get("impact", "medium"),
+                "how_to":   tip.get("how_to", ""),
+            })
+    result["tips"] = normalized
 
     result["timing"] = {"gemma_ms": gemma_ms, "total_ms": gemma_ms}
     return jsonify(result)
