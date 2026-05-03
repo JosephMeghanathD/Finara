@@ -1,4 +1,7 @@
-import { Outlet, NavLink } from 'react-router-dom'
+import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
+import toast from 'react-hot-toast'
+import { getISOWeek, getYear } from 'date-fns'
 import {
   LayoutDashboard, Upload, BookOpen, List, AlertTriangle,
   TrendingUp, Target, BarChart2, PiggyBank, MessageSquare,
@@ -36,7 +39,38 @@ const NAV_SECTIONS = [
   },
 ]
 
+function coachWeekKey() {
+  const now = new Date()
+  return `coach_${getYear(now)}_W${String(getISOWeek(now)).padStart(2, '0')}`
+}
+
 export default function Layout() {
+  const location = useLocation()
+
+  useEffect(() => {
+    const day = new Date().getDay() // 0=Sun … 6=Sat
+    if (day < 3 || day > 5) return  // only Wed–Fri
+    if (location.pathname === '/coach') return // already on the page
+    const nudgeKey   = `coach_nudge_${coachWeekKey()}`
+    const visitedKey = `coach_visited_${coachWeekKey()}`
+    const tipsKey    = coachWeekKey()
+    if (localStorage.getItem(nudgeKey))   return // already nudged this week
+    if (localStorage.getItem(visitedKey)) return // already visited this week
+    if (!localStorage.getItem(tipsKey))   return // no tips cached yet
+    localStorage.setItem(nudgeKey, '1')
+    setTimeout(() => {
+      toast('💡 Your weekly coach tips are waiting — check how you\'re tracking!', {
+        duration: 6000,
+        style: {
+          background: 'var(--surface)',
+          color: 'var(--text)',
+          border: '1px solid rgba(91,155,255,0.25)',
+          fontSize: '13px',
+        },
+      })
+    }, 1800)
+  }, [location.pathname])
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
 

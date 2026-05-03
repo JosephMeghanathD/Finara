@@ -196,7 +196,8 @@ function UserBubble({ content }) {
 
 export default function ChatPage() {
   const location = useLocation()
-  const storyCtx = location.state?.storyContext
+  const storyCtx    = location.state?.storyContext
+  const prefillMsg  = location.state?.prefillMessage || ''
   const { startMonth: globalStart, endMonth: globalEnd } = useTimeFilter()
 
   // If arriving from Story page with context, use that period; otherwise use global filter
@@ -213,7 +214,7 @@ export default function ChatPage() {
   const [starters, setStarters] = useState(() =>
     storyCtx?.story ? storyFollowups(storyCtx.story) : STARTERS
   )
-  const [input, setInput]           = useState('')
+  const [input, setInput]           = useState(prefillMsg)
   const [loading, setLoading]       = useState(false)
   const bottomRef = useRef(null)
 
