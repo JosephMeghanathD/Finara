@@ -94,7 +94,7 @@ const STARTERS = [
   'Am I spending more than last month?',
   'How much did I spend on food?',
   'What are my top 3 expenses?',
-  'What can Finara do?',
+  'What can Fiana do?',
 ]
 
 function storyFollowups(story) {
@@ -234,7 +234,7 @@ export default function ChatPage() {
     } catch {
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: "I'm having trouble connecting right now. Make sure Finara's AI (Ollama) is running.",
+        content: "Fiana's having a moment — make sure Ollama is running and try again.",
         error: true,
       }])
     } finally { setLoading(false) }
@@ -244,15 +244,15 @@ export default function ChatPage() {
     <div className="flex flex-col h-[calc(100vh-80px)]">
       <div className="flex items-center justify-between mb-4 flex-shrink-0 flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Ask Finara</h2>
+          <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Ask Fiana</h2>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
-            Chat with Finara powered by Gemma
+            Chat with Fiana powered by Gemma
           </p>
         </div>
         <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5"
           style={{ background: 'var(--brand-light)', color: 'var(--brand)',
             border: '1px solid rgba(99,102,241,0.2)' }}>
-          <Sparkles size={11} /> Finara AI
+          <Sparkles size={11} /> Fiana AI
         </span>
       </div>
 
@@ -268,7 +268,7 @@ export default function ChatPage() {
                 {storyCtx?.story ? 'Follow up on your financial story' : 'Ask anything about your spending'}
               </p>
               <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-                Finara has full context of your {startMonth ? fmtRange(startMonth, endMonth) : ''} transactions
+                Fiana has full context of your {startMonth ? fmtRange(startMonth, endMonth) : ''} transactions
               </p>
             </div>
           </div>

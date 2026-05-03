@@ -4,8 +4,9 @@ import {
   TrendingUp, Target, BarChart2, PiggyBank, MessageSquare,
   Lightbulb, Sparkles,
 } from 'lucide-react'
-import FinaraLogo from './FinaraLogo'
+import FianaLogo from './FinaraLogo'
 import TopBar from './TopBar'
+import HealthIndicator from './HealthIndicator'
 
 const NAV_SECTIONS = [
   {
@@ -18,7 +19,7 @@ const NAV_SECTIONS = [
     label: 'AI Features',
     items: [
       { to: '/story',        icon: BookOpen,        label: 'My Story' },
-      { to: '/chat',         icon: MessageSquare,   label: 'Ask Finara' },
+      { to: '/chat',         icon: MessageSquare,   label: 'Ask Fiana' },
       { to: '/coach',        icon: Lightbulb,       label: 'Weekly Coach' },
       { to: '/savings',      icon: PiggyBank,       label: 'Savings Plan' },
     ]
@@ -52,9 +53,9 @@ export default function Layout() {
         {/* Logo */}
         <div className="px-5 pt-6 pb-4">
           <div className="flex items-center gap-2.5">
-            <FinaraLogo size={28} />
+            <FianaLogo size={28} />
             <span className="font-bold text-base tracking-tight" style={{ color: '#e1e2ec' }}>
-              Finara
+              Fiana
             </span>
           </div>
           <div className="flex items-center gap-1 mt-1.5 ml-9">
@@ -66,7 +67,7 @@ export default function Layout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto px-3 pb-3 space-y-4">
+        <nav className="flex-1 overflow-y-auto px-3 space-y-4">
           {NAV_SECTIONS.map((section, si) => (
             <div key={si}>
               {section.label && (
@@ -102,6 +103,11 @@ export default function Layout() {
             </div>
           ))}
         </nav>
+
+        {/* Health indicator */}
+        <div className="px-3 pb-3 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <HealthIndicator />
+        </div>
 
       </aside>
 

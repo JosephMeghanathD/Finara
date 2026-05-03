@@ -4,7 +4,7 @@ import { aiApi, reportApi } from '../utils/api'
 import { useTimeFilter } from '../hooks/useTimeFilter'
 import { BookOpen, Sparkles, RefreshCw, MessageCircle, Zap } from 'lucide-react'
 import AiText from '../components/AiText'
-import AiLoader from '../components/AiLoader'
+import AiLoader, { FianaApiLoader } from '../components/AiLoader'
 import toast from 'react-hot-toast'
 import { format, parseISO } from 'date-fns'
 
@@ -54,7 +54,7 @@ export default function StoryPage() {
       setStory(data.story)
       if (data.timing?.gemma_ms) setTiming(data.timing.gemma_ms)
     } catch {
-      toast.error('Failed to generate story. Is Finara AI running?')
+      toast.error('Fiana went quiet — is the AI service running?')
     } finally { setLoading(false) }
   }
 
@@ -64,13 +64,13 @@ export default function StoryPage() {
         <div>
           <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>My Financial Story</h2>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
-            Finara reads your transactions and crafts a personal narrative
+            Fiana reads your transactions and crafts a personal narrative
           </p>
         </div>
         <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5 flex-shrink-0"
           style={{ background: 'var(--brand-light)', color: 'var(--brand)',
             border: '1px solid rgba(99,102,241,0.2)' }}>
-          <Sparkles size={11} /> Finara AI
+          <Sparkles size={11} /> Fiana AI
         </span>
       </div>
 
@@ -85,7 +85,7 @@ export default function StoryPage() {
         </button>
       </div>
 
-      {loading && <AiLoader type="story" title="Finara AI" />}
+      {loading && <AiLoader type="story" title="Fiana · AI Advisor" />}
 
       {story && !loading && (
         <div className="card">
@@ -100,7 +100,7 @@ export default function StoryPage() {
                   {fmtRange(startMonth, endMonth)}
                 </p>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>Finara · powered by Gemma 3</p>
+                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>Fiana · powered by Gemma 3</p>
                   {cached && (
                     <span className="text-xs px-1.5 py-0.5 rounded-full"
                       style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--brand)' }}>

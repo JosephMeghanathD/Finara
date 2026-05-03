@@ -8,7 +8,7 @@ const PAGE_LABELS = {
   '/':             'Dashboard',
   '/upload':       'Upload Data',
   '/story':        'My Story',
-  '/chat':         'Ask Finara',
+  '/chat':         'Ask Fiana',
   '/coach':        'Weekly Coach',
   '/savings':      'Savings Planner',
   '/transactions': 'Transactions',

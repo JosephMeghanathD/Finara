@@ -3,7 +3,7 @@ import { aiApi, budgetApi } from '../utils/api'
 import { useTimeFilter } from '../hooks/useTimeFilter'
 import { PiggyBank, CheckCircle, XCircle, Sparkles, TrendingDown, ChevronDown, Save } from 'lucide-react'
 import AiText from '../components/AiText'
-import AiLoader from '../components/AiLoader'
+import AiLoader, { FianaApiLoader } from '../components/AiLoader'
 import toast from 'react-hot-toast'
 
 const inputStyle = {
@@ -34,7 +34,7 @@ export default function SavingsPage() {
     try {
       const { data } = await aiApi.realityCheck(payload())
       setCheck(data)
-    } catch { toast.error('Check failed. Is Finara AI running?') }
+    } catch { toast.error("Fiana couldn't run the check — is the AI service up?") }
     finally { setLoadingCheck(false) }
   }
 
@@ -43,7 +43,7 @@ export default function SavingsPage() {
     try {
       const { data } = await aiApi.savingsPlan(payload())
       setPlan(data)
-    } catch { toast.error('Plan failed. Is Finara AI running?') }
+    } catch { toast.error("Fiana's plan builder hit a snag — try again shortly") }
     finally { setLoadingPlan(false) }
   }
 
@@ -58,7 +58,7 @@ export default function SavingsPage() {
       await budgetApi.save({ month: saveMonth, budgets })
       toast.success(`Budget saved for ${saveMonth} — ${Object.keys(budgets).length} categories`)
     } catch {
-      toast.error('Failed to save budget')
+      toast.error("Couldn't save — something went sideways")
     } finally { setSavingBudget(false) }
   }
 
@@ -70,13 +70,13 @@ export default function SavingsPage() {
         <div>
           <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Savings Planner</h2>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
-            Set a goal — Finara checks if it's realistic and builds a plan
+            Set a goal — Fiana checks if it's realistic and builds a plan
           </p>
         </div>
         <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5 flex-shrink-0"
           style={{ background: 'var(--brand-light)', color: 'var(--brand)',
             border: '1px solid rgba(99,102,241,0.2)' }}>
-          <Sparkles size={11} /> Finara AI
+          <Sparkles size={11} /> Fiana AI
         </span>
       </div>
 
@@ -118,7 +118,7 @@ export default function SavingsPage() {
         </div>
       </div>
 
-      {loadingCheck && <AiLoader type="reality" title="Reality Check" />}
+      {loadingCheck && <AiLoader type="reality" title="Fiana · Reality Check" />}
 
       {!loadingCheck && check && (
         <div className="card">
@@ -139,7 +139,7 @@ export default function SavingsPage() {
               {!check.is_realistic && (
                 <div className="mt-4 p-3 rounded-xl space-y-2"
                   style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-3)' }}>Finara suggests</p>
+                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-3)' }}>Fiana suggests</p>
 
                   {check.needed_monthly_cut != null ? (
                     <p className="text-sm" style={{ color: 'var(--text-2)' }}>
@@ -177,7 +177,7 @@ export default function SavingsPage() {
         </div>
       )}
 
-      {loadingPlan && <AiLoader type="savings" title="Savings Plan" />}
+      {loadingPlan && <AiLoader type="savings" title="Fiana · Savings Plan" />}
 
       {!loadingPlan && plan && (
         <div className="card">
@@ -188,7 +188,7 @@ export default function SavingsPage() {
             </div>
             <div>
               <p className="font-semibold" style={{ color: 'var(--text)' }}>Your savings plan</p>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>Finara · powered by Gemma 3</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>Fiana · powered by Gemma 3</p>
             </div>
           </div>
 

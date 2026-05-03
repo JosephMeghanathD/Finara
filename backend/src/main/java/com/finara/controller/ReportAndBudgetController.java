@@ -64,6 +64,17 @@ public class ReportAndBudgetController {
         return ResponseEntity.ok(reportService.getDailyForecast(userId, month));
     }
 
+    /** GET /api/forecast/range?startDate=2026-01-15&endDate=2026-01-31 */
+    @GetMapping("/forecast/range")
+    public ResponseEntity<Map<String, Object>> getForecastRange(
+            @RequestParam String startDate,
+            @RequestParam String endDate,
+            HttpServletRequest request) {
+
+        Long userId = (Long) request.getAttribute("userId");
+        return ResponseEntity.ok(reportService.getForecastRange(userId, startDate, endDate));
+    }
+
     // ─── UC7: Budget vs Actual ────────────────────────────────────────────────
 
     /** GET /api/budget?month=2025-07&includeAnalysis=false */

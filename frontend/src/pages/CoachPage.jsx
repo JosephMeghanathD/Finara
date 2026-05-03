@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { aiApi } from '../utils/api'
 import { Lightbulb, RefreshCw, Sparkles, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
-import AiLoader from '../components/AiLoader'
+import AiLoader, { FianaApiLoader } from '../components/AiLoader'
 import { format, getISOWeek, getYear } from 'date-fns'
 
 const TIP_ICONS  = ['💡', '🎯', '📊', '💰', '🏦']
@@ -45,7 +45,7 @@ export default function CoachPage() {
       setTiming(data.timing?.gemma_ms || null)
       localStorage.setItem(key, JSON.stringify({ tips, gemma_ms: data.timing?.gemma_ms }))
     } catch {
-      toast.error('Coach unavailable. Is Finara AI running?')
+      toast.error("Fiana's off the clock — is the AI service running?")
     } finally { setLoading(false) }
   }
 
@@ -64,7 +64,7 @@ export default function CoachPage() {
           <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5"
             style={{ background: 'var(--brand-light)', color: 'var(--brand)',
               border: '1px solid rgba(99,102,241,0.2)' }}>
-            <Sparkles size={11} /> Finara AI
+            <Sparkles size={11} /> Fiana AI
           </span>
           <div className="flex items-center gap-2">
             {cached && (
@@ -85,7 +85,7 @@ export default function CoachPage() {
         </div>
       </div>
 
-      {loading && <AiLoader type="coach" title="Weekly Coach" />}
+      {loading && <AiLoader type="coach" title="Fiana · Weekly Coach" />}
 
       {!loading && tips.length > 0 && (
         <div className="space-y-3">

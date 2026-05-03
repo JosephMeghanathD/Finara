@@ -5,28 +5,28 @@ const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('finara_user')) } catch { return null }
+    try { return JSON.parse(localStorage.getItem('fiana_user')) } catch { return null }
   })
 
   const login = useCallback(async (email, password) => {
     const { data } = await authApi.login({ email, password })
-    localStorage.setItem('finara_token', data.token)
-    localStorage.setItem('finara_user', JSON.stringify(data))
+    localStorage.setItem('fiana_token', data.token)
+    localStorage.setItem('fiana_user', JSON.stringify(data))
     setUser(data)
     return data
   }, [])
 
   const register = useCallback(async (payload) => {
     const { data } = await authApi.register(payload)
-    localStorage.setItem('finara_token', data.token)
-    localStorage.setItem('finara_user', JSON.stringify(data))
+    localStorage.setItem('fiana_token', data.token)
+    localStorage.setItem('fiana_user', JSON.stringify(data))
     setUser(data)
     return data
   }, [])
 
   const logout = useCallback(() => {
-    localStorage.removeItem('finara_token')
-    localStorage.removeItem('finara_user')
+    localStorage.removeItem('fiana_token')
+    localStorage.removeItem('fiana_user')
     setUser(null)
   }, [])
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { reportApi, txnApi } from '../utils/api'
 import { useTimeFilter } from '../hooks/useTimeFilter'
 import { format, endOfMonth, parseISO, getDaysInMonth } from 'date-fns'
@@ -7,7 +7,7 @@ import {
   LineChart, Line, CartesianGrid, ReferenceLine, ReferenceArea, Legend,
   ComposedChart, Area,
 } from 'recharts'
-import { TrendingUp, TrendingDown, Minus, Calendar, FlaskConical } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Calendar, FlaskConical, CalendarRange } from 'lucide-react'
 import AiLoader from '../components/AiLoader'
 
 const TOOLTIP_STYLE = {
@@ -67,6 +67,17 @@ export default function ForecastPage() {
   const [loadingActual, setLoadingActual]  = useState(false)
   const [dailyForecast, setDailyForecast]  = useState(null)
 
+  const [viewMode, setViewMode]            = useState('month')
+  const [rangeStart, setRangeStart]        = useState('')
+  const [rangeEnd, setRangeEnd]            = useState('')
+  const [rangeData, setRangeData]          = useState(null)
+  const [rangeLoading, setRangeLoading]    = useState(false)
+  const [rangeActualTxns, setRangeActualTxns]       = useState([])
+  const [rangeLoadingActual, setRangeLoadingActual] = useState(false)
+  const rangeTimer                         = useRef(null)
+
+  const isRangePast = !!rangeEnd && rangeEnd < format(new Date(), 'yyyy-MM-dd')
+
   const futureOptions = useMemo(() => months[0] ? nextMonths(months[0]) : [], [months])
   const pastOptions   = useMemo(() => months.slice(0, 6), [months])  // last 6 available months
   const isPastMonth   = !!month && months.includes(month)
@@ -117,6 +128,40 @@ export default function ForecastPage() {
       .catch(() => {})
       .finally(() => setLoadingActual(false))
   }, [month, isPastMonth])
+
+  // Default range dates to first/last of the selected month
+  useEffect(() => {
+    if (!month) return
+    setRangeStart(month + '-01')
+    setRangeEnd(format(endOfMonth(parseISO(month + '-01')), 'yyyy-MM-dd'))
+  }, [month])
+
+  // Fetch actual transactions for past date ranges
+  useEffect(() => {
+    if (viewMode !== 'range' || !isRangePast || !rangeStart || !rangeEnd) {
+      setRangeActualTxns([]); return
+    }
+    setRangeLoadingActual(true)
+    txnApi.list(rangeStart, rangeEnd)
+      .then(r => setRangeActualTxns(r.data || []))
+      .catch(() => {})
+      .finally(() => setRangeLoadingActual(false))
+  }, [viewMode, isRangePast, rangeStart, rangeEnd])
+
+  // Fetch date-range forecast (debounced 400ms)
+  useEffect(() => {
+    if (viewMode !== 'range' || !rangeStart || !rangeEnd) return
+    clearTimeout(rangeTimer.current)
+    rangeTimer.current = setTimeout(() => {
+      setRangeLoading(true)
+      setRangeData(null)
+      reportApi.forecastRange(rangeStart, rangeEnd)
+        .then(res => setRangeData(res.data))
+        .catch(() => setRangeData(null))
+        .finally(() => setRangeLoading(false))
+    }, 400)
+    return () => clearTimeout(rangeTimer.current)
+  }, [viewMode, rangeStart, rangeEnd])
 
   const forecasts  = forecast?.forecasts || {}
   const totalData  = forecasts._total || {}
@@ -239,14 +284,19 @@ export default function ForecastPage() {
             tickFormatter={v => v % 5 === 0 || v === 1 ? `${v}` : ''} />
           <YAxis tick={{ fill: '#8c909f', fontSize: 11 }} axisLine={false} tickLine={false}
             tickFormatter={v => `$${v >= 1000 ? (v/1000).toFixed(1)+'k' : v}`} width={44} />
-          <Tooltip
-            contentStyle={TOOLTIP_STYLE} itemStyle={{ color: '#F1F5F9' }}
-            labelStyle={{ color: '#94A3B8', marginBottom: 4 }}
-            labelFormatter={v => `Day ${v}`}
-            formatter={(v, name) => {
-              if (name === 'bandLow' || name === 'bandWidth') return null
-              return [fmtDollar(v), name === 'actual' ? 'Actual' : 'Forecast']
-            }} />
+          <Tooltip content={({ active, payload, label }) => {
+            if (!active || !payload?.length) return null
+            const get = key => payload.find(p => p.dataKey === key)?.value
+            const fc = get('forecast'), lo = get('bandLow'), wi = get('bandWidth'), act = get('actual')
+            return (
+              <div style={{ ...TOOLTIP_STYLE, padding: '8px 12px' }}>
+                <p style={{ color: '#94A3B8', fontSize: 11, marginBottom: 6 }}>Day {label}</p>
+                {fc  != null && <p style={{ color: '#F59E0B', fontSize: 12, margin: '2px 0' }}>Forecast: {fmtDollar(fc)}</p>}
+                {act != null && <p style={{ color: '#0EA5E9', fontSize: 12, margin: '2px 0' }}>Actual: {fmtDollar(act)}</p>}
+                {lo  != null && wi != null && <p style={{ color: 'rgba(147,112,219,0.9)', fontSize: 11, marginTop: 4 }}>Confidence: {fmtDollar(lo)} – {fmtDollar(+(lo + wi).toFixed(2))}</p>}
+              </div>
+            )
+          }} />
           <Area type="monotone" dataKey="bandLow" stackId="band"
             fill="transparent" stroke="rgba(99,102,241,0.35)" strokeWidth={1} strokeDasharray="3 2"
             dot={false} legendType="none" activeDot={false} />
@@ -302,6 +352,31 @@ export default function ForecastPage() {
     trend:    data.trend,
   }))
 
+  const rangeActualByDay = useMemo(() => {
+    const map = {}
+    rangeActualTxns.filter(t => t.transactionType !== 'CREDIT').forEach(t => {
+      map[t.transactionDate] = (map[t.transactionDate] || 0) + parseFloat(t.amount)
+    })
+    return map
+  }, [rangeActualTxns])
+
+  const rangeActualTotal = useMemo(
+    () => +Object.values(rangeActualByDay).reduce((s, v) => s + v, 0).toFixed(2),
+    [rangeActualByDay]
+  )
+
+  const rangeChartData = useMemo(() => {
+    if (!rangeData?.days) return []
+    return rangeData.days.map(d => ({
+      date:      d.date,
+      label:     format(parseISO(d.date), 'MMM d'),
+      forecast:  d.forecast,
+      bandLow:   d.confLow,
+      bandWidth: +(d.confHigh - d.confLow).toFixed(2),
+      actual:    isRangePast ? +(rangeActualByDay[d.date] || 0).toFixed(2) : undefined,
+    }))
+  }, [rangeData, isRangePast, rangeActualByDay])
+
   const isLoadingAll = loading || (isPastMonth && loadingActual)
 
   return (
@@ -315,7 +390,22 @@ export default function ForecastPage() {
           </p>
         </div>
 
-        {(pastOptions.length > 0 || futureOptions.length > 0) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {/* View toggle */}
+          <div className="flex gap-0.5 p-0.5 rounded-lg" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            {[['month', Calendar, 'Month'], ['range', CalendarRange, 'Date Range']].map(([mode, Icon, label]) => (
+              <button key={mode} onClick={() => setViewMode(mode)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all"
+                style={viewMode === mode
+                  ? { background: 'var(--brand)', color: 'white' }
+                  : { background: 'transparent', color: 'var(--text-2)' }}>
+                <Icon size={11} />{label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+      {(pastOptions.length > 0 || futureOptions.length > 0) && viewMode === 'month' && (
           <div className="flex flex-wrap items-center gap-3">
             {/* Past months */}
             {pastOptions.length > 0 && (
@@ -365,9 +455,9 @@ export default function ForecastPage() {
         )}
       </div>
 
-      {isLoadingAll && <AiLoader type="forecast" title={isPastMonth ? 'Loading backtest…' : 'ML Forecast'} />}
+      {viewMode === 'month' && isLoadingAll && <AiLoader type="forecast" title={isPastMonth ? 'Loading backtest…' : 'ML Forecast'} />}
 
-      {!isLoadingAll && forecast && (
+      {viewMode === 'month' && !isLoadingAll && forecast && (
         <>
           {/* ══════════════════════════════════════════════════════════
               PAST MONTH — backtest mode
@@ -377,10 +467,10 @@ export default function ForecastPage() {
               {/* Forecast vs Actual hero */}
               {heroTotal != null && (
                 <div className="card" style={{
-                  borderColor: withinBand === true ? 'rgba(16,185,129,0.25)'
-                    : withinBand === false ? 'rgba(239,68,68,0.25)' : 'rgba(14,165,233,0.25)',
-                  background: withinBand === true ? 'rgba(16,185,129,0.05)'
-                    : withinBand === false ? 'rgba(239,68,68,0.05)' : 'rgba(14,165,233,0.05)',
+                  borderColor: heroTotal == null || actualTotal === 0 ? 'rgba(14,165,233,0.25)'
+                    : actualTotal > heroTotal ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)',
+                  background: heroTotal == null || actualTotal === 0 ? 'rgba(14,165,233,0.05)'
+                    : actualTotal > heroTotal ? 'rgba(239,68,68,0.05)' : 'rgba(16,185,129,0.05)',
                 }}>
                   <div className="flex items-center gap-2 mb-3">
                     <FlaskConical size={14} style={{ color: '#0EA5E9' }} />
@@ -806,11 +896,227 @@ export default function ForecastPage() {
         </>
       )}
 
-      {!isLoadingAll && !forecast && (
+      {!isLoadingAll && !forecast && viewMode === 'month' && (
         <div className="card text-center py-12">
           <p className="text-4xl mb-3">📈</p>
           <p className="font-semibold" style={{ color: 'var(--text)' }}>Not enough data for forecast</p>
           <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>Upload at least 2 months of transactions</p>
+        </div>
+      )}
+
+      {/* ── Date Range view ─────────────────────────────────────────── */}
+      {viewMode === 'range' && (
+        <div className="space-y-5">
+          {/* Date pickers */}
+          <div className="card">
+            <div className="flex flex-wrap items-center gap-4">
+              <CalendarRange size={15} style={{ color: 'var(--brand)', flexShrink: 0 }} />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-3)' }}>From</label>
+                  <input type="date" value={rangeStart} onChange={e => setRangeStart(e.target.value)}
+                    className="text-xs px-2 py-1 rounded-lg outline-none"
+                    style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }} />
+                </div>
+                <span className="text-xs" style={{ color: 'var(--text-3)' }}>→</span>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-3)' }}>To</label>
+                  <input type="date" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)}
+                    className="text-xs px-2 py-1 rounded-lg outline-none"
+                    style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {rangeLoading && <AiLoader type="forecast" title="Fiana is computing your range forecast…" />}
+
+          {!rangeLoading && rangeData && !rangeData.error && (
+            <>
+              {/* Hero card — backtest style for past ranges, standard for future */}
+              {isRangePast && rangeActualTotal > 0 ? (
+                <div className="card" style={{
+                  borderColor: rangeActualTotal > rangeData.totalForecast ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)',
+                  background:  rangeActualTotal > rangeData.totalForecast ? 'rgba(239,68,68,0.05)' : 'rgba(16,185,129,0.05)',
+                }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <FlaskConical size={14} style={{ color: '#0EA5E9' }} />
+                    <span className="text-xs font-semibold" style={{ color: '#0EA5E9' }}>
+                      Backtest — {rangeData.startDate} → {rangeData.endDate}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded font-medium"
+                      style={{ background: 'rgba(14,165,233,0.15)', color: '#0EA5E9',
+                        border: '1px solid rgba(14,165,233,0.25)' }}>
+                      {rangeData.totalDays}d range
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-6">
+                    <div>
+                      <p className="text-xs" style={{ color: 'var(--text-3)' }}>Forecast was</p>
+                      <p className="text-3xl font-bold" style={{ color: 'var(--text)' }}>
+                        {fmtDollar(rangeData.totalForecast)}
+                      </p>
+                      {rangeData.totalConfLow != null && (
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+                          band {fmtDollar(rangeData.totalConfLow)} – {fmtDollar(rangeData.totalConfHigh)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center self-center">
+                      <div className="w-8 h-px" style={{ background: 'var(--border)' }} />
+                      <span className="text-xs mx-2" style={{ color: 'var(--text-3)' }}>vs</span>
+                      <div className="w-8 h-px" style={{ background: 'var(--border)' }} />
+                    </div>
+                    <div>
+                      <p className="text-xs" style={{ color: 'var(--text-3)' }}>Actual spend</p>
+                      <p className="text-3xl font-bold"
+                        style={{ color: rangeActualTotal > rangeData.totalForecast ? '#f87171' : '#34d399' }}>
+                        {fmtDollar(rangeActualTotal)}
+                      </p>
+                      <p className="text-xs mt-0.5 font-medium"
+                        style={{ color: rangeActualTotal > rangeData.totalForecast ? '#f87171' : '#34d399' }}>
+                        {rangeActualTotal > rangeData.totalForecast ? '+' : ''}
+                        {(((rangeActualTotal - rangeData.totalForecast) / rangeData.totalForecast) * 100).toFixed(1)}% vs forecast
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="card" style={{ borderColor: 'rgba(99,102,241,0.2)', background: 'var(--brand-light)' }}>
+                  <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-3)' }}>
+                    Forecast for {rangeData.startDate} → {rangeData.endDate}
+                  </p>
+                  <p className="text-4xl font-bold" style={{ color: 'var(--text)' }}>
+                    {fmtDollar(rangeData.totalForecast)}
+                  </p>
+                  <div className="flex flex-wrap gap-4 mt-2">
+                    {rangeData.totalDays > 0 && (
+                      <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                        avg {fmtDollar(+(rangeData.totalForecast / rangeData.totalDays).toFixed(2))}/day
+                        over {rangeData.totalDays} days
+                      </span>
+                    )}
+                    {rangeData.totalConfLow != null && (
+                      <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                        band {fmtDollar(rangeData.totalConfLow)} – {fmtDollar(rangeData.totalConfHigh)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Per-day chart */}
+              {rangeChartData.length > 0 && (
+                <div className="card">
+                  <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>
+                    {isRangePast && rangeActualTotal > 0 ? 'Forecast vs actual spend' : 'Day-by-day forecast'}
+                  </h3>
+                  <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
+                    {isRangePast && rangeActualTotal > 0
+                      ? 'Amber = forecast · Blue bars = actual spend · Shaded band = confidence range'
+                      : 'Amber line = predicted spend · Shaded band = confidence range'}
+                  </p>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <ComposedChart data={rangeChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                      <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: '#8c909f', fontSize: 11 }}
+                        axisLine={false} tickLine={false}
+                        interval={Math.max(0, Math.ceil(rangeChartData.length / 10) - 1)} />
+                      <YAxis tick={{ fill: '#8c909f', fontSize: 11 }} axisLine={false} tickLine={false}
+                        tickFormatter={v => `$${v >= 1000 ? (v/1000).toFixed(1)+'k' : v}`} width={44} />
+                      <Tooltip content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null
+                        const get = key => payload.find(p => p.dataKey === key)?.value
+                        const fc = get('forecast'), lo = get('bandLow'), wi = get('bandWidth'), act = get('actual')
+                        return (
+                          <div style={{ ...TOOLTIP_STYLE, padding: '8px 12px' }}>
+                            <p style={{ color: '#94A3B8', fontSize: 11, marginBottom: 6 }}>{label}</p>
+                            {fc  != null && <p style={{ color: '#F59E0B', fontSize: 12, margin: '2px 0' }}>Forecast: {fmtDollar(fc)}</p>}
+                            {act != null && act > 0 && <p style={{ color: '#0EA5E9', fontSize: 12, margin: '2px 0' }}>Actual: {fmtDollar(act)}</p>}
+                            {lo  != null && wi != null && <p style={{ color: 'rgba(147,112,219,0.9)', fontSize: 11, marginTop: 4 }}>Confidence: {fmtDollar(lo)} – {fmtDollar(+(lo + wi).toFixed(2))}</p>}
+                          </div>
+                        )
+                      }} />
+                      <Area type="monotone" dataKey="bandLow" stackId="band"
+                        fill="transparent" stroke="rgba(99,102,241,0.35)" strokeWidth={1}
+                        strokeDasharray="3 2" dot={false} legendType="none" activeDot={false} />
+                      <Area type="monotone" dataKey="bandWidth" stackId="band"
+                        fill="rgba(99,102,241,0.15)" fillOpacity={1}
+                        stroke="rgba(99,102,241,0.35)" strokeWidth={1} strokeDasharray="3 2"
+                        dot={false} legendType="none" activeDot={false} />
+                      {isRangePast && rangeActualTotal > 0 && (
+                        <Bar dataKey="actual" fill="#0EA5E9" fillOpacity={0.65}
+                          radius={[2, 2, 0, 0]} maxBarSize={14} legendType="none" />
+                      )}
+                      <Line type="monotone" dataKey="forecast"
+                        stroke="#F59E0B" strokeWidth={2} dot={false}
+                        activeDot={{ r: 4, fill: '#F59E0B', strokeWidth: 0 }} />
+                      <Legend content={() => (
+                        <div className="flex gap-4 justify-center mt-2 flex-wrap">
+                          <span className="flex items-center gap-1.5 text-xs" style={{ color: '#94A3B8' }}>
+                            <span style={{ display: 'inline-block', width: 16, height: 2, background: '#F59E0B', borderRadius: 1 }} />
+                            Forecast
+                          </span>
+                          {isRangePast && rangeActualTotal > 0 && (
+                            <span className="flex items-center gap-1.5 text-xs" style={{ color: '#94A3B8' }}>
+                              <span style={{ display: 'inline-block', width: 12, height: 8, background: 'rgba(14,165,233,0.65)', borderRadius: 2 }} />
+                              Actual
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1.5 text-xs" style={{ color: '#94A3B8' }}>
+                            <span style={{ display: 'inline-block', width: 16, height: 8, borderRadius: 2,
+                              background: 'rgba(99,102,241,0.15)', border: '1px dashed rgba(99,102,241,0.5)' }} />
+                            Confidence band
+                          </span>
+                        </div>
+                      )} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Per-day table for small ranges */}
+              {rangeChartData.length > 0 && rangeChartData.length <= 14 && (
+                <div className="card">
+                  <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>Daily breakdown</h3>
+                  <div className="space-y-1.5">
+                    {rangeData.days.map(d => (
+                      <div key={d.date} className="flex items-center gap-3">
+                        <span className="text-xs w-24 flex-shrink-0 font-medium" style={{ color: 'var(--text-2)' }}>
+                          {format(parseISO(d.date), 'EEE, MMM d')}
+                        </span>
+                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                          <div className="h-1.5 rounded-full"
+                            style={{
+                              width: `${Math.min((d.forecast / (rangeData.totalForecast / rangeData.totalDays * 2)) * 100, 100)}%`,
+                              background: 'linear-gradient(90deg,#6366f1,#F59E0B)',
+                            }} />
+                        </div>
+                        <span className="text-xs w-16 text-right font-semibold" style={{ color: 'var(--text)' }}>
+                          {fmtDollar(d.forecast)}
+                        </span>
+                        <span className="text-xs w-28 text-right hidden sm:block" style={{ color: 'var(--text-3)' }}>
+                          {fmtDollar(d.confLow)} – {fmtDollar(d.confHigh)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {!rangeLoading && rangeData?.error && (
+            <div className="card text-center py-10">
+              <p className="font-semibold" style={{ color: 'var(--text)' }}>{rangeData.error}</p>
+            </div>
+          )}
+
+          {!rangeLoading && !rangeData && !rangeLoading && (
+            <div className="card text-center py-10">
+              <p className="text-sm" style={{ color: 'var(--text-3)' }}>Pick a date range above to see the forecast</p>
+            </div>
+          )}
         </div>
       )}
     </div>

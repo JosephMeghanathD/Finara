@@ -1,7 +1,7 @@
 import { useId } from 'react'
 
 /**
- * Finara logomark — ascending bar chart with trend line and AI sparkle.
+ * Fiana logomark — ascending bar chart with trend line and AI sparkle.
  * Self-contained SVG: background is baked in, scales to any size.
  */
 export default function FinaraLogo({ size = 32, className = '' }) {
@@ -22,7 +22,7 @@ export default function FinaraLogo({ size = 32, className = '' }) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
-      aria-label="Finara"
+      aria-label="Fiana"
     >
       <defs>
         {/* Dark navy background gradient — diagonal */}

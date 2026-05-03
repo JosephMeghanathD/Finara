@@ -40,7 +40,7 @@ public class SecurityConfig {
                         // Always allow CORS preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // Public endpoints
-                        .requestMatchers("/api/auth/**", "/actuator/health", "/actuator/**").permitAll()
+                        .requestMatchers("/api/auth/**", "/api/health", "/actuator/health", "/actuator/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)

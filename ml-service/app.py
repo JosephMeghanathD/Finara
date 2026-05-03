@@ -2,7 +2,7 @@
 Finara ML Service
 Exposes ML models + Gemma AI via Flask REST API
 """
-
+import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 from routes.categorize import categorize_bp
@@ -12,6 +12,8 @@ from routes.narrative import narrative_bp
 from routes.savings import savings_bp
 from routes.insights import insights_bp
 from routes.pdf import pdf_bp
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 app = Flask(__name__)
 CORS(app)
@@ -27,7 +29,31 @@ app.register_blueprint(insights_bp,   url_prefix="/api/ai")
 
 @app.route("/health")
 def health():
-    return {"status": "ok", "service": "finara-ml"}
+    import requests as req_lib
+    ollama_status = "down"
+    ollama_detail = None
+    try:
+        r = req_lib.get(OLLAMA_BASE_URL, timeout=8)
+        if r.status_code == 200:
+            ollama_status = "up"
+            # Also grab loaded model name if available
+            try:
+                tags = req_lib.get(OLLAMA_BASE_URL + "/api/tags", timeout=5)
+                models = [m["name"] for m in tags.json().get("models", [])]
+                ollama_detail = models[0] if models else "no model loaded"
+            except Exception:
+                ollama_detail = "running"
+        else:
+            ollama_detail = f"HTTP {r.status_code}"
+    except Exception as e:
+        ollama_detail = str(e)[:80]
+
+    overall = "ok" if ollama_status == "up" else "degraded"
+    return jsonify({
+        "status": overall,
+        "service": "finara-ml",
+        "ollama": {"status": ollama_status, "detail": ollama_detail},
+    })
 
 @app.errorhandler(Exception)
 def handle_exception(e):

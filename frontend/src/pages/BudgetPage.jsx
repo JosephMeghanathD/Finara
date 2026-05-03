@@ -3,7 +3,7 @@ import { budgetApi } from '../utils/api'
 import { useTimeFilter } from '../hooks/useTimeFilter'
 import { Sparkles, Zap, TrendingUp, TrendingDown, AlertTriangle, CheckCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import AiLoader from '../components/AiLoader'
+import AiLoader, { FianaApiLoader } from '../components/AiLoader'
 import AiText from '../components/AiText'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Cell, LabelList,
@@ -84,7 +84,7 @@ export default function BudgetPage() {
       toast.success('Budget saved!')
       setCopiedFrom('')
       loadBudgetData()
-    } catch { toast.error('Failed to save budget') }
+    } catch { toast.error("Couldn't save — something went sideways") }
     finally { setSaving(false) }
   }
 
@@ -137,7 +137,7 @@ export default function BudgetPage() {
           <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5"
             style={{ background: 'var(--brand-light)', color: 'var(--brand)',
               border: '1px solid rgba(99,102,241,0.2)' }}>
-            <Sparkles size={11} /> Finara AI
+            <Sparkles size={11} /> Fiana AI
           </span>
           <select value={month} onChange={e => setMonth(e.target.value)}
             className="px-3 py-2 rounded-lg text-sm outline-none"
@@ -310,7 +310,7 @@ export default function BudgetPage() {
       {tab === 'compare' && (
         <div className="space-y-4">
           {loading ? (
-            <AiLoader type="budget" title="Budget Analysis" compact />
+            <AiLoader type="budget" title="Fiana · Budget Analysis" compact />
           ) : (
             <>
               {/* Summary stats */}
@@ -362,7 +362,7 @@ export default function BudgetPage() {
                 <div className="card" style={{ borderColor: 'rgba(99,102,241,0.2)', background: 'var(--brand-light)' }}>
                   <div className="flex items-center gap-1.5 mb-2">
                     <div className="w-1 h-4 rounded-full" style={{ background: 'var(--brand)' }} />
-                    <p className="text-xs font-semibold" style={{ color: 'var(--brand)' }}>Finara analysis</p>
+                    <p className="text-xs font-semibold" style={{ color: 'var(--brand)' }}>Fiana analysis</p>
                   </div>
                   <AiText content={analysis} compact />
                 </div>

@@ -7,7 +7,7 @@ const api = axios.create({
 
 // Attach JWT to every request
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('finara_token')
+  const token = localStorage.getItem('fiana_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -17,8 +17,8 @@ api.interceptors.response.use(
   res => res,
   err => {
     if (err.response?.status === 401 || err.response?.status === 403) {
-      localStorage.removeItem('finara_token')
-      localStorage.removeItem('finara_user')
+      localStorage.removeItem('fiana_token')
+      localStorage.removeItem('fiana_user')
       window.location.href = '/login'
     }
     return Promise.reject(err)
@@ -57,12 +57,18 @@ export const reportApi = {
   get:      month  => api.get(`/reports/${month}`),
   forecast:      month => api.get('/forecast',       { params: { month } }),
   forecastDaily: month => api.get('/forecast/daily', { params: { month } }),
+  forecastRange: (startDate, endDate) => api.get('/forecast/range', { params: { startDate, endDate } }),
 }
 
 // ─── Budget ───────────────────────────────────────────────────────────────────
 export const budgetApi = {
   get:         (month, includeAnalysis = true) => api.get('/budget', { params: { month, includeAnalysis } }),
   save:        data => api.post('/budget', data),
+}
+
+// ─── Health ───────────────────────────────────────────────────────────────────
+export const healthApi = {
+  check: () => axios.get('/api/health', { timeout: 8000 }),
 }
 
 // ─── AI / Gemma ───────────────────────────────────────────────────────────────

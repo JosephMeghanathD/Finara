@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import toast from 'react-hot-toast'
-import FinaraLogo from '../components/FinaraLogo'
+import FianaLogo from '../components/FinaraLogo'
 
 export default function LoginPage() {
   const { login }   = useAuth()
@@ -24,10 +24,10 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-7">
           <div className="flex justify-center mb-3">
-            <FinaraLogo size={44} />
+            <FianaLogo size={44} />
           </div>
           <h1 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Welcome back</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>Sign in to your Finara account</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>Sign in to your Fiana account</p>
         </div>
 
         <div className="card">

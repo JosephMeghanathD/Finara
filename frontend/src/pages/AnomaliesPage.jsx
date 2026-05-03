@@ -4,7 +4,7 @@ import { useTimeFilter } from '../hooks/useTimeFilter'
 import { AlertTriangle, HelpCircle, ChevronRight, Sparkles, Info, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import AiText from '../components/AiText'
-import AiLoader from '../components/AiLoader'
+import AiLoader, { FianaApiLoader } from '../components/AiLoader'
 
 export default function AnomaliesPage() {
   const { startDate, endDate } = useTimeFilter()
@@ -32,7 +32,7 @@ export default function AnomaliesPage() {
     try {
       const { data } = await aiApi.explainMerchant(key)
       setMerchantCache(prev => ({ ...prev, [key]: data }))
-    } catch { toast.error('Could not identify merchant'); setOpenMerchant(null) }
+    } catch { toast.error("Fiana couldn't place that merchant — try again"); setOpenMerchant(null) }
     finally { setMerchantLoading(null) }
   }
 
@@ -43,7 +43,7 @@ export default function AnomaliesPage() {
       toast.success(`Rechecked ${data.checked} transactions — ${data.flagged} flagged`)
       const r = await txnApi.anomalies(startDate, endDate)
       setAnomalies(r.data)
-    } catch { toast.error('Recheck failed — is the ML service running?') }
+    } catch { toast.error("Fiana's scan hit a snag — is the ML service up?") }
     finally { setRechecking(false) }
   }
 
@@ -53,7 +53,7 @@ export default function AnomaliesPage() {
     try {
       const { data } = await aiApi.explainAnomaly(txn.id)
       setExplanations(prev => ({ ...prev, [txn.id]: data.explanation }))
-    } catch { toast.error('Could not explain — is Finara AI running?') }
+    } catch { toast.error('Fiana went quiet — is the AI service up?') }
     finally { setExplaining(null) }
   }
 
@@ -70,7 +70,7 @@ export default function AnomaliesPage() {
           <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5"
             style={{ background: 'var(--brand-light)', color: 'var(--brand)',
               border: '1px solid rgba(99,102,241,0.2)' }}>
-            <Sparkles size={11} /> Finara AI
+            <Sparkles size={11} /> Fiana AI
           </span>
           <button onClick={recheck} disabled={rechecking || !startDate}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
@@ -82,7 +82,7 @@ export default function AnomaliesPage() {
         </div>
       </div>
 
-      {loading && <AiLoader type="anomaly" title="Anomaly Detection" />}
+      {loading && <AiLoader type="anomaly" title="Fiana · Anomaly Detection" />}
 
       {!loading && anomalies.length === 0 && (
         <div className="card text-center py-12">
@@ -173,7 +173,7 @@ export default function AnomaliesPage() {
               <div className="mt-4 pt-4" style={{ borderTop:'1px solid var(--border)' }}>
                 <div className="flex items-center gap-1.5 mb-2">
                   <div className="w-1 h-4 rounded-full" style={{ background:'var(--brand)' }} />
-                  <p className="text-xs font-semibold" style={{ color:'var(--brand)' }}>Finara explains</p>
+                  <p className="text-xs font-semibold" style={{ color:'var(--brand)' }}>Fiana explains</p>
                 </div>
                 <AiText content={explanations[txn.id]} compact />
               </div>

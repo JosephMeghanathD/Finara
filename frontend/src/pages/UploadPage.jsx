@@ -217,7 +217,7 @@ export default function UploadPage() {
         </button>
       )}
 
-      {loading && <AiLoader type="upload" title="Processing Upload" />}
+      {loading && <AiLoader type="upload" title="Fiana · Processing Upload" />}
 
       {result && (
         <div className="card" style={{ borderColor: 'rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.03)' }}>
@@ -264,7 +264,7 @@ export default function UploadPage() {
       <div>
         <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text)' }}>Your uploads</h3>
         {loadingBatches ? (
-          <AiLoader type="transactions" title="Loading uploads" compact />
+          <AiLoader type="transactions" title="Fiana · Loading uploads" compact />
         ) : batches.length === 0 ? (
           <div className="card text-center py-10">
             <FileText size={28} className="mx-auto mb-3" style={{ color: 'var(--text-3)' }} />

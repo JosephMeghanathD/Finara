@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { txnApi, reportApi } from '../utils/api'
+import { txnApi } from '../utils/api'
 import { useAuth } from '../hooks/useAuth'
 import { useTimeFilter } from '../hooks/useTimeFilter'
 import {
   Upload, AlertTriangle, ArrowRight, ArrowDownRight, ArrowUpRight,
-  Sparkles, Receipt, MessageCircle, Target, BarChart3, BookOpen,
+  Sparkles, Receipt, MessageCircle, Target, BookOpen,
   TrendingUp, Zap, CalendarDays,
 } from 'lucide-react'
 import { format, parseISO, differenceInCalendarDays, endOfMonth, startOfMonth } from 'date-fns'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Area, AreaChart,
 } from 'recharts'
+import RangeForecastCard from '../components/RangeForecastCard'
 
 const CATEGORY_COLORS = {
   'Food & Drink':    '#6366F1',
@@ -77,9 +77,6 @@ function StatCard({ icon: Icon, label, value, sub, to, color = 'var(--brand)' })
   return to ? <Link to={to} className="block h-full">{inner}</Link> : inner
 }
 
-const CustomDot = ({ cx, cy, r, fill }) => (
-  <circle cx={cx} cy={cy} r={r + 2} fill={fill} stroke="#fff" strokeWidth={2} />
-)
 
 export default function DashboardPage() {
   const { user } = useAuth()
@@ -88,20 +85,6 @@ export default function DashboardPage() {
   const [recent, setRecent]                 = useState([])
   const [loadingSummary, setLoadingSummary] = useState(false)
   const [loadingRecent, setLoadingRecent]   = useState(false)
-  const [trendData, setTrendData]           = useState([])
-
-  useEffect(() => {
-    if (months.length >= 2) {
-      reportApi.list(months.slice(0, 12).join(','))
-        .then(rep => setTrendData(
-          (rep.data || [])
-            .map(m => ({ month: m.month.slice(5), total: Math.round(m.total || 0) }))
-            .reverse()
-        ))
-        .catch(() => {})
-    }
-  }, [months])
-
   useEffect(() => {
     if (!startMonth || !endMonth) return
     setLoadingSummary(true)
@@ -113,7 +96,7 @@ export default function DashboardPage() {
 
     setLoadingRecent(true)
     txnApi.list(startDate, endDate)
-      .then(r => setRecent((r.data || []).slice(0, 6)))
+      .then(r => setRecent(r.data || []))
       .catch(() => {})
       .finally(() => setLoadingRecent(false))
   }, [startMonth, endMonth])
@@ -137,6 +120,11 @@ export default function DashboardPage() {
   const avgPerDay = hasData ? summary.total / daysInRange : 0
 
   const pieData = cats.slice(0, 6).map(([name, value]) => ({ name, value }))
+
+  const actualByDay = {}
+  recent.filter(t => t.transactionType !== 'CREDIT').forEach(t => {
+    actualByDay[t.transactionDate] = (actualByDay[t.transactionDate] || 0) + parseFloat(t.amount)
+  })
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'
@@ -168,7 +156,7 @@ export default function DashboardPage() {
             value={loadingSummary ? '…' : hasData ? `${netFlow >= 0 ? '+' : ''}$${fmt0(Math.abs(netFlow))}` : '—'}
             sub={netFlow >= 0 ? 'Positive' : 'Negative'} color={netFlow >= 0 ? '#10B981' : '#EF4444'} />
           <StatCard icon={Receipt} label="Transactions"
-            value={loadingSummary ? '…' : recent.length > 0 ? `${recent.length}+` : (summary ? '0' : '—')}
+            value={loadingRecent ? '…' : recent.length > 0 ? `${recent.length}` : (summary ? '0' : '—')}
             sub={rangeLabel} to="/transactions" color="var(--brand)" />
           <StatCard icon={AlertTriangle} label="Anomalies"
             value={loadingSummary ? '…' : summary?.anomalyCount ?? '—'}
@@ -303,6 +291,17 @@ export default function DashboardPage() {
         </div>
       )}
 
+       {/* ── Forecast vs actual spend ── */}
+        {hasData && startDate && endDate && Object.keys(actualByDay).length > 0 && (
+          <RangeForecastCard
+            startDate={startDate}
+            endDate={endDate}
+            actualByDay={actualByDay}
+            title="Forecast vs actual spend"
+            compact
+          />
+        )}
+
       {/* ── Lower bento: Recent Transactions + Quick Actions ── */}
       {hasData && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -332,11 +331,11 @@ export default function DashboardPage() {
               <p className="text-sm text-center py-6" style={{ color: 'var(--text-3)' }}>No transactions found</p>
             ) : (
               <div className="space-y-1">
-                {recent.map((txn, i) => {
+                {recent.slice(0, 6).map((txn, i, arr) => {
                   const color = CAT_COLOR(txn.category)
                   return (
                     <div key={txn.id} className="flex items-center gap-3 py-2 rounded-xl px-2 -mx-2 transition-colors"
-                      style={{ borderBottom: i < recent.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                      style={{ borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
                       <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-bold"
                         style={{ background: `${color}18`, color }}>
                         {(txn.description || '?')[0].toUpperCase()}
@@ -446,42 +445,6 @@ export default function DashboardPage() {
               ${fmt2(summary.total)}
             </span>
           </div>
-        </div>
-      )}
-
-      {/* ── Monthly spending trend ── */}
-      {trendData.length >= 2 && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-semibold" style={{ color: 'var(--text)' }}>Spending trend</h3>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>Monthly totals</p>
-            </div>
-            <Link to="/compare" className="flex items-center gap-1 text-xs font-medium" style={{ color: 'var(--brand)' }}>
-              Compare <ArrowRight size={13} />
-            </Link>
-          </div>
-          <ResponsiveContainer width="100%" height={160}>
-            <AreaChart data={trendData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="var(--brand)" stopOpacity={0.18} />
-                  <stop offset="95%" stopColor="var(--brand)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: '#8c909f', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#8c909f', fontSize: 11 }} axisLine={false} tickLine={false}
-                tickFormatter={v => `$${v >= 1000 ? (v/1000).toFixed(0)+'k' : v}`} width={44} />
-              <Tooltip
-                contentStyle={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
-                itemStyle={{ color: '#e1e2ec' }} labelStyle={{ color: '#8c909f' }}
-                formatter={v => [`$${fmt0(v)}`, 'Spent']} cursor={{ stroke: 'var(--brand)', strokeWidth: 1 }} />
-              <Area type="monotone" dataKey="total" stroke="var(--brand)" strokeWidth={2}
-                fill="url(#trendGrad)" dot={{ fill: 'var(--brand)', strokeWidth: 0, r: 3 }}
-                activeDot={{ r: 5, fill: 'var(--brand)' }} />
-            </AreaChart>
-          </ResponsiveContainer>
         </div>
       )}
 

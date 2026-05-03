@@ -134,10 +134,35 @@ export default function ComparePage() {
         ))}
       </div>
 
-      {loading && <AiLoader type="compare" title="Month Comparison" />}
+      {loading && <AiLoader type="compare" title="Fiana · Month Comparison" />}
 
       {!loading && reports.length >= 2 && (
         <>
+          {/* ── Daily spending by day of month ───────────────────────── */}
+          <div className="card">
+            <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Daily spending by day of month</h3>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>Each line shows how much was spent on each day</p>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={dailyData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: '#8c909f', fontSize: 11 }} axisLine={false} tickLine={false}
+                  interval={2} />
+                <YAxis tick={{ fill: '#8c909f', fontSize: 11 }} axisLine={false} tickLine={false}
+                  tickFormatter={v => `$${v >= 1000 ? (v/1000).toFixed(0)+'k' : v}`} width={44} />
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE} itemStyle={{ color: '#F1F5F9' }}
+                  labelStyle={{ color: '#94A3B8', marginBottom: 4 }}
+                  labelFormatter={v => `Day ${v}`}
+                  formatter={(v, name) => [`$${v.toFixed(2)}`, name]} />
+                <Legend wrapperStyle={{ color: '#94A3B8', fontSize: 12 }} />
+                {selected.map((m, i) => (
+                  <Line key={m} type="monotone" dataKey={m} stroke={COLORS[i % COLORS.length]}
+                    strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} connectNulls />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
           {/* ── Monthly totals + trend ───────────────────────────────── */}
           <div className="card">
             <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Total spending trend</h3>
@@ -239,31 +264,6 @@ export default function ComparePage() {
               </ResponsiveContainer>
             </div>
           )}
-
-          {/* ── Daily spending by day of month ───────────────────────── */}
-          <div className="card">
-            <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Daily spending by day of month</h3>
-            <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>Each line shows how much was spent on each day</p>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={dailyData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="day" tick={{ fill: '#8c909f', fontSize: 11 }} axisLine={false} tickLine={false}
-                  interval={2} />
-                <YAxis tick={{ fill: '#8c909f', fontSize: 11 }} axisLine={false} tickLine={false}
-                  tickFormatter={v => `$${v >= 1000 ? (v/1000).toFixed(0)+'k' : v}`} width={44} />
-                <Tooltip
-                  contentStyle={TOOLTIP_STYLE} itemStyle={{ color: '#F1F5F9' }}
-                  labelStyle={{ color: '#94A3B8', marginBottom: 4 }}
-                  labelFormatter={v => `Day ${v}`}
-                  formatter={(v, name) => [`$${v.toFixed(2)}`, name]} />
-                <Legend wrapperStyle={{ color: '#94A3B8', fontSize: 12 }} />
-                {selected.map((m, i) => (
-                  <Line key={m} type="monotone" dataKey={m} stroke={COLORS[i % COLORS.length]}
-                    strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} connectNulls />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
 
           {/* ── Cumulative daily spend ───────────────────────────────── */}
           <div className="card">

@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.Set;
@@ -193,6 +195,75 @@ public class ReportService {
         TimingContext.recordMlResponse(resp, System.currentTimeMillis() - mlStart);
         return resp != null ? resp : Map.of("error", "Daily forecast service unavailable");
     }
+
+    // ─── Date-range Forecast ─────────────────────────────────────────────────
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getForecastRange(Long userId, String startDateStr, String endDateStr) {
+        LocalDate startDate = LocalDate.parse(startDateStr);
+        LocalDate endDate   = LocalDate.parse(endDateStr);
+
+        if (startDate.isAfter(endDate)) {
+            return Map.of("error", "startDate must be before or equal to endDate");
+        }
+        if (ChronoUnit.DAYS.between(startDate, endDate) >= 365) {
+            return Map.of("error", "Date range cannot exceed 365 days");
+        }
+
+        // Collect all months the range spans
+        List<YearMonth> monthsInRange = new ArrayList<>();
+        YearMonth cur = YearMonth.from(startDate);
+        YearMonth last = YearMonth.from(endDate);
+        while (!cur.isAfter(last)) { monthsInRange.add(cur); cur = cur.plusMonths(1); }
+
+        List<Map<String, Object>> days = new ArrayList<>();
+        double totalFc = 0, totalLo = 0, totalHi = 0;
+
+        for (YearMonth ym : monthsInRange) {
+            Map<String, Object> daily = getDailyForecast(userId, ym.toString());
+            if (daily.containsKey("error")) continue;
+
+            List<Double> fc  = (List<Double>) daily.get("forecast");
+            List<Double> clo = (List<Double>) daily.get("confidence_low");
+            List<Double> chi = (List<Double>) daily.get("confidence_high");
+            if (fc == null) continue;
+
+            LocalDate monthStart = ym.atDay(1);
+            LocalDate monthEnd   = ym.atEndOfMonth();
+            LocalDate from = startDate.isAfter(monthStart) ? startDate : monthStart;
+            LocalDate to   = endDate.isBefore(monthEnd)    ? endDate   : monthEnd;
+
+            LocalDate d = from;
+            while (!d.isAfter(to)) {
+                int idx = d.getDayOfMonth() - 1;
+                double fv = idx < fc.size()  ? fc.get(idx)  : 0;
+                double lv = clo != null && idx < clo.size() ? clo.get(idx) : Math.max(0, fv * 0.85);
+                double hv = chi != null && idx < chi.size() ? chi.get(idx) : fv * 1.15;
+
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("date",     d.toString());
+                entry.put("forecast", round2(fv));
+                entry.put("confLow",  round2(lv));
+                entry.put("confHigh", round2(hv));
+                days.add(entry);
+
+                totalFc += fv; totalLo += lv; totalHi += hv;
+                d = d.plusDays(1);
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("startDate",     startDateStr);
+        result.put("endDate",       endDateStr);
+        result.put("totalDays",     days.size());
+        result.put("totalForecast", round2(totalFc));
+        result.put("totalConfLow",  round2(totalLo));
+        result.put("totalConfHigh", round2(totalHi));
+        result.put("days",          days);
+        return result;
+    }
+
+    private double round2(double v) { return Math.round(v * 100.0) / 100.0; }
 
     private int monthDiff(String from, String to) {
         String[] f = from.split("-");

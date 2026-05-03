@@ -5,7 +5,8 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, LineChart, Line, XAx
 import { ArrowDownRight, ArrowUpRight, HelpCircle, AlertTriangle, Info, Flag, FlagOff, Pencil, Trash2, Plus, X } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import AiText from '../components/AiText'
-import AiLoader from '../components/AiLoader'
+import AiLoader, { FianaApiLoader } from '../components/AiLoader'
+import RangeForecastCard from '../components/RangeForecastCard'
 import ConfirmDialog from '../components/ConfirmDialog'
 import toast from 'react-hot-toast'
 
@@ -149,7 +150,7 @@ export default function TransactionsPage() {
     try {
       const { data } = await aiApi.explainMerchant(key)
       setMerchantCache(prev => ({ ...prev, [key]: data }))
-    } catch { toast.error('Could not identify merchant'); setOpenMerchant(null) }
+    } catch { toast.error("Fiana couldn't place that merchant — try again"); setOpenMerchant(null) }
     finally { setMerchantLoading(null) }
   }
 
@@ -162,7 +163,7 @@ export default function TransactionsPage() {
     try {
       const { data } = await aiApi.explainAnomaly(txn.id)
       setExplanations(prev => ({ ...prev, [txn.id]: data.explanation }))
-    } catch { toast.error('Could not explain — is Finara AI running?') }
+    } catch { toast.error('Fiana went quiet — is the AI service up?') }
     finally { setExplaining(null) }
   }
 
@@ -258,6 +259,11 @@ export default function TransactionsPage() {
 
   const aggAvg = aggData.length > 0 ? aggData.reduce((s, d) => s + d.spent, 0) / aggData.length : 0
   const aggLevelLabel = aggLevel === 'day' ? 'daily' : aggLevel === 'week' ? 'weekly' : 'monthly'
+
+  const actualByDay = {}
+  debits.forEach(t => {
+    actualByDay[t.transactionDate] = (actualByDay[t.transactionDate] || 0) + parseFloat(t.amount)
+  })
 
   const filtered = txns.filter(t => {
     const ok = typeFilter==='All' || (typeFilter==='Credit'&&isCredit(t)) || (typeFilter==='Debit'&&!isCredit(t))
@@ -385,6 +391,16 @@ export default function TransactionsPage() {
         </div>
       )}
 
+      {startDate && endDate && debits.length > 0 && (
+        <RangeForecastCard
+          startDate={startDate}
+          endDate={endDate}
+          actualByDay={actualByDay}
+          title="Forecast vs actual spend"
+          compact
+        />
+      )}
+
       <div className="card">
         <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <div className="flex items-center gap-1 p-0.5 rounded-lg border"
@@ -411,7 +427,7 @@ export default function TransactionsPage() {
         </div>
 
         {loading ? (
-          <AiLoader type="transactions" compact />
+          <FianaApiLoader text="Communicating with Fiana…" />
         ) : filtered.length === 0 ? (
           <p className="text-center py-10 text-sm" style={{ color:'var(--text-3)' }}>No transactions found</p>
         ) : (
@@ -561,7 +577,7 @@ export default function TransactionsPage() {
                               <div className="flex items-center gap-1.5 mb-2">
                                 <HelpCircle size={12} style={{ color: 'var(--brand)' }} />
                                 <span className="text-xs font-semibold" style={{ color: 'var(--brand)' }}>
-                                  Finara explains
+                                  Fiana explains
                                 </span>
                               </div>
                               <AiText content={explanations[t.id]} compact />
