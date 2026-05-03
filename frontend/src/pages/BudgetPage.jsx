@@ -1,24 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { budgetApi } from '../utils/api'
 import { useTimeFilter } from '../hooks/useTimeFilter'
-import { Sparkles, Zap, TrendingUp, TrendingDown, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Sparkles, Zap, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useCategories } from '../hooks/useCategories'
 import AiLoader, { FianaApiLoader } from '../components/AiLoader'
 import AiText from '../components/AiText'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Cell, LabelList,
 } from 'recharts'
-
-const DEFAULT_CATEGORIES = ['Food & Drink','Groceries','Transport','Shopping',
-  'Entertainment','Healthcare','Utilities','Rent & Housing','Travel','Subscriptions']
-
-const CATEGORY_COLORS = {
-  'Food & Drink':'#6366F1','Groceries':'#8B5CF6','Transport':'#0EA5E9',
-  'Shopping':'#F59E0B','Entertainment':'#10B981','Healthcare':'#EF4444',
-  'Utilities':'#6B7280','Rent & Housing':'#84CC16','Travel':'#F97316',
-  'Financial':'#64748B','Subscriptions':'#A78BFA','Personal Care':'#EC4899',
-  'Other':'#94A3B8',
-}
 
 const fmtDollar = v =>
   `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -42,7 +32,17 @@ export default function BudgetPage() {
   const [loading, setLoading]   = useState(false)
   const [saving, setSaving]     = useState(false)
   const [tab, setTab]           = useState('set')
-  const [copiedFrom, setCopiedFrom] = useState('')   // non-empty = inputs pre-filled from prior month
+  const [copiedFrom, setCopiedFrom] = useState('')
+  const { categories, getColor, addCategory } = useCategories()
+  const [addingCat, setAddingCat]   = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+
+  const handleAddBudgetCat = () => {
+    if (!addCategory(newCatName)) {
+      toast.error('Category already exists or name is empty'); return
+    }
+    setAddingCat(false); setNewCatName('')
+  }
 
   useEffect(() => {
     if (endMonth && !month) setMonth(endMonth)
@@ -245,7 +245,7 @@ export default function BudgetPage() {
                 <button
                   onClick={() => {
                     const filled = {}
-                    DEFAULT_CATEGORIES.forEach(cat => {
+                    categories.forEach(cat => {
                       if (actualMap[cat]) filled[cat] = Math.ceil(actualMap[cat])
                     })
                     setBudgets(p => ({ ...p, ...filled }))
@@ -260,9 +260,9 @@ export default function BudgetPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-              {DEFAULT_CATEGORIES.map(cat => {
+              {categories.map(cat => {
                 const actual  = actualMap[cat]
-                const color   = CATEGORY_COLORS[cat] || '#94A3B8'
+                const color   = getColor(cat)
                 const bVal    = Number(budgets[cat]) || 0
                 const over    = actual && bVal > 0 && actual > bVal
                 return (
@@ -298,6 +298,36 @@ export default function BudgetPage() {
                 )
               })}
             </div>
+
+            {addingCat ? (
+              <div className="flex gap-2 mt-4">
+                <input
+                  autoFocus
+                  value={newCatName}
+                  onChange={e => setNewCatName(e.target.value)}
+                  placeholder="New category name"
+                  className="flex-1 px-3 py-2 rounded-xl text-sm outline-none"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddBudgetCat(); if (e.key === 'Escape') { setAddingCat(false); setNewCatName('') } }}
+                />
+                <button onClick={handleAddBudgetCat}
+                  className="px-3 py-2 rounded-xl text-xs font-medium"
+                  style={{ background: 'var(--brand)', color: 'white' }}>Add</button>
+                <button onClick={() => { setAddingCat(false); setNewCatName('') }}
+                  className="px-3 py-2 rounded-xl text-xs font-medium"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setAddingCat(true)}
+                className="flex items-center gap-1.5 mt-4 text-xs font-medium transition-colors"
+                style={{ color: 'var(--text-3)' }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--brand)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
+                <Plus size={12} /> Add category
+              </button>
+            )}
 
             <button onClick={saveBudgets} disabled={saving} className="btn-primary mt-4 w-full">
               {saving ? 'Saving…' : 'Save budget'}
@@ -381,7 +411,7 @@ export default function BudgetPage() {
                     </h3>
                     <div className="space-y-4">
                       {compareCategories.map(({ cat, b, a, pct, over }) => {
-                        const color   = CATEGORY_COLORS[cat] || '#94A3B8'
+                        const color   = getColor(cat)
                         const barPct  = b > 0 ? Math.min((a / b) * 100, 100) : 0
                         const noB     = b === 0
                         return (
@@ -471,8 +501,7 @@ export default function BudgetPage() {
                           <Bar dataKey="Actual" radius={[0,3,3,0]} maxBarSize={14}>
                             {barData.map((entry, i) => (
                               <Cell key={i}
-                                fill={entry.over ? '#ef4444' : (CATEGORY_COLORS[
-                                  compareCategories[i]?.cat] || '#6366F1')}
+                                fill={entry.over ? '#ef4444' : getColor(compareCategories[i]?.cat || '')}
                                 fillOpacity={0.85} />
                             ))}
                             <LabelList dataKey="Actual" position="right"

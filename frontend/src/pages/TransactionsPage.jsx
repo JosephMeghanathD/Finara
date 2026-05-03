@@ -9,15 +9,8 @@ import AiLoader, { FianaApiLoader } from '../components/AiLoader'
 import RangeForecastCard from '../components/RangeForecastCard'
 import ConfirmDialog from '../components/ConfirmDialog'
 import toast from 'react-hot-toast'
+import { useCategories } from '../hooks/useCategories'
 
-const COLORS = {
-  'Food & Drink':'#6366F1','Groceries':'#8B5CF6','Transport':'#0EA5E9',
-  'Shopping':'#F59E0B','Entertainment':'#10B981','Healthcare':'#EF4444',
-  'Utilities':'#6366F1','Rent & Housing':'#84CC16','Travel':'#F97316',
-  'Financial':'#64748B','Subscriptions':'#A78BFA','Personal Care':'#EC4899',
-}
-const FALLBACK = Object.values(COLORS)
-const CATEGORIES = Object.keys(COLORS)
 const EMPTY_FORM = { description: '', amount: '', transactionDate: '', transactionType: 'DEBIT', category: '' }
 
 function fmtAmt(n) { return Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) }
@@ -30,8 +23,19 @@ function TxnModal({ txn, onClose, onSaved }) {
       : { ...EMPTY_FORM, transactionDate: new Date().toISOString().slice(0,10) }
   )
   const [saving, setSaving] = React.useState(false)
+  const { categories, addCategory } = useCategories()
+  const [addingCat, setAddingCat]   = React.useState(false)
+  const [newCatName, setNewCatName] = React.useState('')
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleAddCat = () => {
+    if (!addCategory(newCatName)) {
+      toast.error('Category already exists or name is empty'); return
+    }
+    set('category', newCatName.trim())
+    setAddingCat(false); setNewCatName('')
+  }
 
   const save = async () => {
     if (!form.description.trim() || !form.amount || !form.transactionDate) {
@@ -91,14 +95,40 @@ function TxnModal({ txn, onClose, onSaved }) {
           </div>
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-3)' }}>Category</label>
-            <select value={form.category} onChange={e => set('category', e.target.value)}
+            <select value={addingCat ? '' : form.category} onChange={e => {
+              if (e.target.value === '__add__') { setAddingCat(true); return }
+              set('category', e.target.value)
+            }}
               className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
               style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
               <option value="">Uncategorized</option>
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="__add__">＋ Add new category…</option>
             </select>
           </div>
         </div>
+
+        {addingCat && (
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              value={newCatName}
+              onChange={e => setNewCatName(e.target.value)}
+              placeholder="New category name"
+              className="flex-1 px-3 py-2 rounded-xl text-sm outline-none"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
+              onKeyDown={e => { if (e.key === 'Enter') handleAddCat(); if (e.key === 'Escape') { setAddingCat(false); setNewCatName('') } }}
+            />
+            <button onClick={handleAddCat}
+              className="px-3 py-2 rounded-xl text-xs font-medium"
+              style={{ background: 'var(--brand)', color: 'white' }}>Add</button>
+            <button onClick={() => { setAddingCat(false); setNewCatName('') }}
+              className="w-9 flex items-center justify-center rounded-xl"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
+              <X size={13} />
+            </button>
+          </div>
+        )}
 
         <div className="flex gap-3 pt-1">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all"
@@ -121,6 +151,7 @@ const TOOLTIP_STYLE = {
 
 export default function TransactionsPage() {
   const { startDate, endDate, startMonth, endMonth } = useTimeFilter()
+  const { getColor } = useCategories()
   const [txns, setTxns]             = useState([])
   const [loading, setLoading]       = useState(false)
   const [search, setSearch]         = useState('')
@@ -318,7 +349,7 @@ export default function TransactionsPage() {
                 <PieChart>
                   <Pie data={chartData} cx="50%" cy="50%" innerRadius={38} outerRadius={64}
                     dataKey="value" paddingAngle={2}>
-                    {chartData.map((e,i) => <Cell key={i} fill={COLORS[e.name]||FALLBACK[i%FALLBACK.length]} />)}
+                    {chartData.map((e,i) => <Cell key={i} fill={getColor(e.name)} />)}
                   </Pie>
                   <Tooltip formatter={v=>`$${fmtAmt(v)}`} contentStyle={TOOLTIP_STYLE}
                     itemStyle={{color:'#e1e2ec'}} labelStyle={{color:'#8c909f',marginBottom:4}} />
@@ -326,7 +357,7 @@ export default function TransactionsPage() {
               </ResponsiveContainer>
               <div className="flex-1 space-y-1.5 overflow-y-auto" style={{ maxHeight:140 }}>
                 {chartData.map(({name,value},i) => {
-                  const color = COLORS[name]||FALLBACK[i%FALLBACK.length]
+                  const color = getColor(name)
                   const pct = debitTotal>0 ? ((value/debitTotal)*100).toFixed(0) : 0
                   return (
                     <div key={name} className="flex items-center gap-2 text-sm">
@@ -446,7 +477,7 @@ export default function TransactionsPage() {
               <tbody>
                 {filtered.map(t => {
                   const credit = isCredit(t)
-                  const catColor = COLORS[t.category]||'#94A3B8'
+                  const catColor = getColor(t.category)
                   const hasExplanation   = !!explanations[t.id]
                   const isExplaining     = explaining === t.id
                   const isMerchantOpen   = openMerchant === t.id

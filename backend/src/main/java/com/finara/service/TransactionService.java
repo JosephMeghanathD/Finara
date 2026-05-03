@@ -559,6 +559,19 @@ public class TransactionService {
                 .uploadBatchId("manual")
                 .rawCsvRow("manual entry")
                 .build();
+
+        // Auto-categorize if no category provided
+        if (txn.getCategory() == null || txn.getCategory().isBlank()) {
+            categorize(new ArrayList<>(List.of(txn)));
+        }
+
+        // Run anomaly detection with existing month data for context
+        String month = txn.getTransactionDate().toString().substring(0, 7);
+        List<Transaction> monthTxns = transactionRepository.findByUserIdAndMonth(userId, month);
+        List<Transaction> combined = new ArrayList<>(monthTxns);
+        combined.add(txn);
+        detectAnomalies(combined);
+
         return toResponse(transactionRepository.save(txn));
     }
 
