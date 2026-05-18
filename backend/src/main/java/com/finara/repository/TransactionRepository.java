@@ -110,4 +110,95 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     @Modifying
     @Query("DELETE FROM Transaction t WHERE t.user.id = :userId")
     void deleteAllByUserId(@Param("userId") Long userId);
+
+    // Returns: [normalized_desc, month_count, occurrence_count,
+    //           avg_amount, max_amount, min_amount, last_seen, first_seen, category]
+    // Groups by description only so one merchant with a price change (e.g. rent) appears once.
+    // CV < 10% filter excludes high-variance merchants (gas, random shopping) that aren't true subscriptions.
+    // Groceries and Food & Drink excluded — those are regular spending, never subscriptions.
+    @Query(value = """
+        SELECT LOWER(TRIM(description))                                 AS normalized_desc,
+               COUNT(DISTINCT TO_CHAR(transaction_date, 'YYYY-MM'))     AS month_count,
+               COUNT(*)                                                 AS occurrence_count,
+               AVG(amount)                                              AS avg_amount,
+               MAX(amount)                                              AS max_amount,
+               MIN(amount)                                              AS min_amount,
+               MAX(transaction_date)                                    AS last_seen,
+               MIN(transaction_date)                                    AS first_seen,
+               MAX(category)                                            AS category
+        FROM transactions
+        WHERE user_id = :userId
+          AND (transaction_type IS NULL OR transaction_type = 'DEBIT')
+          AND (category IS NULL OR category NOT IN ('Income','Transfer','Groceries','Food & Drink'))
+        GROUP BY LOWER(TRIM(description))
+        HAVING COUNT(DISTINCT TO_CHAR(transaction_date, 'YYYY-MM')) >= 2
+          AND COALESCE(STDDEV(amount) / NULLIF(AVG(amount), 0), 0) < 0.10
+        ORDER BY AVG(amount) DESC
+        """, nativeQuery = true)
+    List<Object[]> findRecurringCharges(@Param("userId") Long userId);
+
+    // Returns: [description, total_spend, visit_count, avg_per_visit, category]
+    @Query(value = """
+        SELECT description,
+               SUM(amount)   AS total_spend,
+               COUNT(*)      AS visit_count,
+               AVG(amount)   AS avg_per_visit,
+               MAX(category) AS category
+        FROM transactions
+        WHERE user_id = :userId
+          AND (transaction_type IS NULL OR transaction_type = 'DEBIT')
+          AND (category IS NULL OR category NOT IN ('Income','Transfer'))
+          AND TO_CHAR(transaction_date, 'YYYY-MM') BETWEEN :startMonth AND :endMonth
+        GROUP BY description
+        ORDER BY SUM(amount) DESC
+        LIMIT 20
+        """, nativeQuery = true)
+    List<Object[]> getMerchantLeaderboard(@Param("userId") Long userId,
+                                          @Param("startMonth") String startMonth,
+                                          @Param("endMonth") String endMonth);
+
+    // Returns: [id, transaction_date, description, amount] for a specific subscription
+    @Query(value = """
+        SELECT id, transaction_date, description, amount
+        FROM transactions
+        WHERE user_id = :userId
+          AND LOWER(TRIM(description)) = :normalizedName
+          AND (transaction_type IS NULL OR transaction_type = 'DEBIT')
+        ORDER BY transaction_date DESC
+        """, nativeQuery = true)
+    List<Object[]> findSubscriptionTransactions(@Param("userId") Long userId,
+                                                @Param("normalizedName") String normalizedName);
+
+    // Returns: [description, total_spend] — used for prior-period trend computation
+    @Query(value = """
+        SELECT description, SUM(amount) AS total_spend
+        FROM transactions
+        WHERE user_id = :userId
+          AND (transaction_type IS NULL OR transaction_type = 'DEBIT')
+          AND (category IS NULL OR category NOT IN ('Income','Transfer'))
+          AND TO_CHAR(transaction_date, 'YYYY-MM') BETWEEN :startMonth AND :endMonth
+        GROUP BY description
+        """, nativeQuery = true)
+    List<Object[]> getMerchantTotalsForPeriod(@Param("userId") Long userId,
+                                              @Param("startMonth") String startMonth,
+                                              @Param("endMonth") String endMonth);
+
+    // Returns: [id, transaction_date, description, amount, category]
+    // Amount filtering is done in Java to avoid nullable numeric issues in native queries.
+    @Query(value = """
+        SELECT id, transaction_date, description, amount, category
+        FROM transactions
+        WHERE user_id = :userId
+          AND (transaction_type IS NULL OR transaction_type = 'DEBIT')
+          AND (category IS NULL OR category NOT IN ('Income', 'Transfer'))
+          AND (:keyword = '' OR LOWER(description) LIKE LOWER('%' || :keyword || '%'))
+          AND (:startMonth = '' OR TO_CHAR(transaction_date, 'YYYY-MM') >= :startMonth)
+          AND (:endMonth = '' OR TO_CHAR(transaction_date, 'YYYY-MM') <= :endMonth)
+        ORDER BY transaction_date DESC, amount DESC
+        LIMIT 200
+        """, nativeQuery = true)
+    List<Object[]> searchTransactions(@Param("userId") Long userId,
+                                      @Param("keyword") String keyword,
+                                      @Param("startMonth") String startMonth,
+                                      @Param("endMonth") String endMonth);
 }

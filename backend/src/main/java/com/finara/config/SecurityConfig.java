@@ -41,6 +41,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // Public endpoints
                         .requestMatchers("/api/auth/**", "/api/health", "/actuator/health", "/actuator/**").permitAll()
+                        // Internal service-to-service endpoint (secured via X-Service-Token header in controller)
+                        .requestMatchers("/api/service/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)

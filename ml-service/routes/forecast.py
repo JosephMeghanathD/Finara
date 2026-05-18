@@ -280,6 +280,130 @@ def forecast_daily(daily_amounts: list[float], periods: int = 30,
             }
 
 
+# ── Insights ─────────────────────────────────────────────────────────────────
+
+def compute_insights(monthly_totals: dict, forecasts: dict) -> dict:
+    """
+    Derive high-level insights from computed forecasts + history.
+    Returned as `insights` in the /forecast response — no extra ML call needed.
+    """
+    risers, fallers, watch_cats = [], [], []
+    model_dist, conf_scores    = {}, []
+    savings_total              = 0.0
+
+    for cat, fc_data in forecasts.items():
+        if cat == "_total":
+            continue
+        model_key = fc_data.get("model", "unknown")
+        model_dist[model_key] = model_dist.get(model_key, 0) + 1
+        conf_scores.append(fc_data.get("history_count", 0))
+
+        forecast_val = float(fc_data.get("target_value") or 0)
+        last_month   = float(fc_data.get("last_month")   or 0)
+        hist_avg     = float(fc_data.get("historical_avg") or 0)
+
+        # Month-over-month delta
+        if last_month > 0:
+            pct_change = ((forecast_val - last_month) / last_month) * 100
+            entry = {
+                "category":   cat,
+                "forecast":   round(forecast_val, 2),
+                "last_month": round(last_month,   2),
+                "hist_avg":   round(hist_avg,     2),
+                "pct_change": round(pct_change,   1),
+                "trend":      fc_data.get("trend", "stable"),
+                "conf_low":   fc_data.get("confidence_low",  0),
+                "conf_high":  fc_data.get("confidence_high", 0),
+            }
+            if pct_change > 5:
+                risers.append(entry)
+            elif pct_change < -5:
+                savings_total += max(0.0, last_month - forecast_val)
+                fallers.append(entry)
+
+        # Watch: forecast significantly above historical average
+        if hist_avg > 0 and forecast_val > hist_avg * 1.25:
+            ratio = round(forecast_val / hist_avg, 1)
+            watch_cats.append({
+                "category": cat,
+                "forecast": round(forecast_val, 2),
+                "hist_avg": round(hist_avg, 2),
+                "ratio":    ratio,
+                "reason":   f"Forecast ${forecast_val:.0f} is {ratio}× your ${hist_avg:.0f} average",
+                "severity": "high" if ratio >= 1.6 else "medium",
+            })
+
+    risers.sort(key=lambda x: x["pct_change"], reverse=True)
+    fallers.sort(key=lambda x: x["pct_change"])
+    watch_cats.sort(key=lambda x: x["ratio"], reverse=True)
+
+    avg_history   = sum(conf_scores) / len(conf_scores) if conf_scores else 0
+    has_seasonal  = "holt_winters_seasonal" in model_dist
+    if avg_history >= 12 and has_seasonal:
+        confidence_tier = "high"
+    elif avg_history >= 4:
+        confidence_tier = "medium"
+    else:
+        confidence_tier = "low"
+
+    return {
+        "top_risers":         risers[:3],
+        "top_fallers":        fallers[:3],
+        "watch_categories":   watch_cats[:3],
+        "savings_potential":  round(max(0.0, savings_total), 2),
+        "confidence_tier":    confidence_tier,
+        "model_distribution": model_dist,
+        "avg_history_months": round(avg_history, 1),
+    }
+
+
+# ── Seasonality Profile ──────────────────────────────────────────────────────
+
+def compute_seasonality_profile(monthly_totals: dict, month_labels: list) -> dict:
+    """
+    Per-category seasonality index for each calendar month (1-12).
+    index[m] = avg_spend_in_calendar_month_m / overall_monthly_avg
+    Values > 1.0 = above-average spending in that month.
+    Requires at least 12 labeled months.
+    """
+    if len(month_labels) < 12:
+        return {}
+
+    profiles = {}
+    for cat, amounts in monthly_totals.items():
+        if len(amounts) < 12:
+            continue
+
+        buckets: dict[int, list] = {m: [] for m in range(1, 13)}
+        for label, amt in zip(month_labels, amounts):
+            try:
+                month_num = int(label.split('-')[1])
+                buckets[month_num].append(float(amt))
+            except (ValueError, IndexError):
+                continue
+
+        month_avgs   = {m: float(np.mean(v)) if v else 0.0 for m, v in buckets.items()}
+        non_zero     = [v for v in month_avgs.values() if v > 0]
+        if not non_zero:
+            continue
+        overall_avg  = float(np.mean(non_zero))
+        if overall_avg <= 0:
+            continue
+
+        index        = [round(month_avgs[m] / overall_avg, 3) for m in range(1, 13)]
+        peak_month   = int(np.argmax(index)) + 1
+        trough_month = int(np.argmin(index)) + 1
+
+        profiles[cat] = {
+            "index":        index,
+            "peak_month":   peak_month,
+            "trough_month": trough_month,
+            "avg_spend":    round(overall_avg, 2),
+        }
+
+    return profiles
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @forecast_bp.route("/forecast", methods=["POST"])
@@ -299,8 +423,25 @@ def forecast():
     all_totals = [sum(v) for v in zip(*monthly_totals.values())]
     forecasts["_total"] = forecast_category(all_totals, periods)
 
+    insights = compute_insights(monthly_totals, forecasts)
+
     total_ms = round((time.time() - t0) * 1000)
-    return jsonify({"forecasts": forecasts, "timing": {"total_ms": total_ms}})
+    return jsonify({"forecasts": forecasts, "insights": insights, "timing": {"total_ms": total_ms}})
+
+
+@forecast_bp.route("/forecast/seasonality", methods=["POST"])
+def forecast_seasonality():
+    data           = request.get_json()
+    monthly_totals = data.get("monthly_totals", {})
+    month_labels   = data.get("month_labels",   [])
+
+    if not monthly_totals or not month_labels:
+        return jsonify({"error": "monthly_totals and month_labels are required"}), 400
+
+    t0       = time.time()
+    profiles = compute_seasonality_profile(monthly_totals, month_labels)
+    total_ms = round((time.time() - t0) * 1000)
+    return jsonify({"profiles": profiles, "timing": {"total_ms": total_ms}})
 
 
 @forecast_bp.route("/forecast/daily", methods=["POST"])

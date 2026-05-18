@@ -55,15 +55,34 @@ export const txnApi = {
 export const reportApi = {
   list:     months => api.get('/reports', { params: { months } }),
   get:      month  => api.get(`/reports/${month}`),
-  forecast:      month => api.get('/forecast',       { params: { month } }),
-  forecastDaily: month => api.get('/forecast/daily', { params: { month } }),
-  forecastRange: (startDate, endDate) => api.get('/forecast/range', { params: { startDate, endDate } }),
+  forecast:        month => api.get('/forecast',          { params: { month } }),
+  forecastDaily:   month => api.get('/forecast/daily',    { params: { month } }),
+  forecastRange:   (startDate, endDate) => api.get('/forecast/range', { params: { startDate, endDate } }),
+  forecastRefresh:      month              => api.post('/forecast/refresh',      null, { params: { month } }),
+  forecastSeasonality:  ()                 => api.get('/forecast/seasonality'),
+  forecastMulti:        (baseMonth, periods) => api.get('/forecast/multi',       { params: { baseMonth, periods } }),
+  forecastBudgetSuggest: month             => api.get('/forecast/budget-suggest', { params: { month } }),
+  forecastAccuracy:     ()                 => api.get('/forecast/accuracy'),
+  compareDaily:    months => api.get('/reports/compare/daily',    { params: { months } }),
+  compareInsights: months => api.get('/reports/compare/insights', { params: { months } }),
 }
 
 // ─── Budget ───────────────────────────────────────────────────────────────────
 export const budgetApi = {
-  get:         (month, includeAnalysis = true) => api.get('/budget', { params: { month, includeAnalysis } }),
-  save:        data => api.post('/budget', data),
+  get:       (month, includeAnalysis = true) => api.get('/budget',          { params: { month, includeAnalysis } }),
+  save:      data                            => api.post('/budget',          data),
+  context:   month                           => api.get('/budget/context',   { params: { month } }),
+  history:   months                          => api.get('/budget/history',   { params: { months } }),
+  analysis:  month                           => api.get('/budget/analysis',  { params: { month } }),
+  getMulti:  (baseMonth, periods = 6)        => api.get('/budget/multi',     { params: { baseMonth, periods } }),
+  saveMulti: data                            => api.post('/budget/multi',    data),
+}
+
+// ─── Spending Insights ────────────────────────────────────────────────────────
+export const insightsApi = {
+  subscriptions:            ()                     => api.get('/subscriptions'),
+  subscriptionTransactions: name                    => api.get('/subscriptions/transactions', { params: { name } }),
+  merchantLeaderboard:      (startMonth, endMonth) => api.get('/merchants/leaderboard', { params: { startMonth, endMonth } }),
 }
 
 // ─── Health ───────────────────────────────────────────────────────────────────
@@ -73,11 +92,12 @@ export const healthApi = {
 
 // ─── AI / Gemma ───────────────────────────────────────────────────────────────
 export const aiApi = {
+  storyData:       (startMonth, endMonth) => api.get('/ai/story/data', { params: { startMonth, endMonth } }),
   story:           (startMonth, endMonth, refresh = false) => api.post('/ai/story', { startMonth, endMonth, refresh: refresh ? 'true' : undefined }),
   explainAnomaly:  txnId                  => api.post('/ai/explain-anomaly',  { transactionId: txnId }),
   realityCheck:    data                   => api.post('/ai/reality-check',    data),
   savingsPlan:     data                   => api.post('/ai/savings-plan',     data),
   chat:            data                   => api.post('/ai/chat',             data),
   explainMerchant: name                   => api.post('/ai/explain-merchant', { merchantName: name }),
-  coach:           week                   => api.get('/ai/coach',             { params: { week } }),
+  coach:           (week, refresh)         => api.get('/ai/coach',             { params: { week, ...(refresh ? { refresh: true } : {}) } }),
 }

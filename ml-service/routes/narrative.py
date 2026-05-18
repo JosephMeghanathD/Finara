@@ -3,10 +3,15 @@ Route: /api/ai/narrative
 Gemma-powered financial storytelling + Q&A + merchant explainer.
 """
 
+import logging
 import re
 import time
 from flask import Blueprint, request, jsonify
 from utils.gemma_client import ask_gemma, ask_gemma_json, ask_gemma_chat
+from utils.intent_parser import parse_intent
+from utils.data_fetcher import fetch_data, summarise_for_prompt, build_chart_from_fetched
+
+logger = logging.getLogger(__name__)
 
 narrative_bp = Blueprint("narrative", __name__)
 
@@ -79,22 +84,70 @@ def _extract_chart(reply: str, context: dict, user_message: str = "") -> tuple[s
             return clean_reply, chart
         # Fall through to bar if no history available
 
-    # Bar or pie — both need categories
-    categories = context.get("categories", {})
-    if not categories:
-        return reply, None
-
-    data = [
-        {"name": k, "value": round(v, 2)}
-        for k, v in sorted(categories.items(), key=lambda x: x[1], reverse=True)
-        if v > 0
-    ]
+    # Bar or pie — use pre-built chart_categories (accurate, pre-sorted by Java)
+    data = context.get("chart_categories", [])
+    if not data:
+        # Fallback: build from raw categories dict
+        raw = context.get("categories", {})
+        data = [
+            {"name": k, "value": round(v, 2)}
+            for k, v in sorted(raw.items(), key=lambda x: x[1], reverse=True)
+            if v > 0
+        ]
     if not data:
         return reply, None
 
     chart_type = "bar" if any(kw in combined for kw in _BAR_KEYWORDS) else "pie"
     chart = {"type": chart_type, "title": "Spending Breakdown", "data": data}
     return clean_reply, chart
+
+
+def _extract_suggestions(reply: str, message: str, context: dict) -> list:
+    """Generate 4 contextual follow-up suggestion chips from the conversation so far."""
+    combined = (reply + " " + message).lower()
+    suggestions = []
+
+    pools = [
+        (["dining", "restaurant", "eating out", "takeout"], "How can I cut dining costs?"),
+        (["groceries", "grocery", "supermarket", "food store"], "What's my average grocery spend?"),
+        (["anomaly", "flagged", "unusual", "suspicious", "unexpected"], "Explain my flagged transactions"),
+        (["savings", "save", "saving", "emergency fund"], "Create a savings plan for me"),
+        (["forecast", "next month", "predict", "projection"], "What's next month's forecast?"),
+        (["trend", "over time", "monthly trend", "month by month"], "Show my spending trend chart"),
+        (["budget", "over budget", "limit"], "How am I doing on my budget?"),
+        (["income", "earning", "salary", "paycheck"], "Show income vs spending chart"),
+        (["category", "breakdown", "categories", "by category"], "Show spending breakdown chart"),
+        (["top", "biggest", "largest", "most expensive"], "What were my biggest purchases?"),
+        (["reduce", "cut", "lower", "spend less"], "Where can I spend less?"),
+        (["compare", "vs last month", "versus", "compared to"], "Compare to last month"),
+        (["subscription", "recurring", "monthly charge"], "Find my recurring charges"),
+        (["entertainment", "streaming", "movie"], "Break down entertainment spending"),
+        (["travel", "flight", "hotel", "vacation"], "Show my travel spending"),
+        (["health", "medical", "pharmacy", "doctor"], "Analyze health spending"),
+    ]
+
+    seen = set()
+    for keywords, chip in pools:
+        if any(kw in combined for kw in keywords) and chip not in seen:
+            seen.add(chip)
+            suggestions.append(chip)
+        if len(suggestions) >= 4:
+            break
+
+    defaults = [
+        "Show my spending breakdown",
+        "What were my top expenses?",
+        "Compare to last month",
+        "Create a savings plan",
+        "Am I spending too much?",
+        "What's my biggest expense category?",
+    ]
+    for d in defaults:
+        if d not in seen and len(suggestions) < 4:
+            seen.add(d)
+            suggestions.append(d)
+
+    return suggestions[:4]
 
 
 @narrative_bp.route("/story", methods=["POST"])
@@ -155,7 +208,7 @@ Be specific, use the exact numbers above."""
 
     t0 = time.time()
     story = ask_gemma(prompt, system=NARRATOR_SYSTEM, temperature=0.65,
-                      num_ctx=1536, num_predict=450)
+                      num_ctx=1536, num_predict=380)
     gemma_ms = round((time.time() - t0) * 1000)
 
     return jsonify({"story": story, "timing": {"gemma_ms": gemma_ms, "total_ms": gemma_ms}})
@@ -214,6 +267,49 @@ def chat():
 
     history_context = data.get("history_context", "").strip()
 
+    # Agentic pipeline credentials — passed from Java AiService
+    user_id       = data.get("user_id")
+    service_token = data.get("service_token")
+
+    t_total = time.time()
+
+    # ── Phase 1: Intent parsing ────────────────────────────────────────────────
+    intent       = None
+    fetched      = None
+    fetched_text = ""
+    phase1_ms    = 0
+    phase2_ms    = 0
+
+    if user_id and service_token:
+        available_months = context.get("available_months", [])
+        try:
+            t1 = time.time()
+            intent    = parse_intent(message, available_months, context)
+            phase1_ms = round((time.time() - t1) * 1000)
+            logger.info("intent: needs_fetch=%s type=%s (%dms)",
+                        intent.get("needs_fetch"), intent.get("type"), phase1_ms)
+        except Exception as exc:
+            logger.warning("Phase 1 intent parse failed (non-fatal): %s", exc)
+            intent = None
+
+        # ── Phase 2: Live data fetch ───────────────────────────────────────────
+        if intent and intent.get("needs_fetch") and intent.get("type"):
+            try:
+                t2 = time.time()
+                fetched   = fetch_data(user_id, intent["type"], intent.get("params", {}),
+                                       token=service_token)
+                phase2_ms = round((time.time() - t2) * 1000)
+                if fetched:
+                    fetched_text = summarise_for_prompt(fetched)
+                    logger.info("Phase 2 fetched %s in %dms, rows=%d",
+                                intent["type"], phase2_ms, len(fetched.get("data", [])))
+            except Exception as exc:
+                logger.warning("Phase 2 data fetch failed (non-fatal): %s", exc)
+
+    # ── Phase 3: Build context & call Gemma ───────────────────────────────────
+
+    period = context.get("period", "")
+
     ctx_parts = []
     if context.get("income"):
         ctx_parts.append(f"Income: ${context['income']:.0f}")
@@ -224,62 +320,137 @@ def chat():
     if context.get("net_cash_flow") is not None:
         ncf = context["net_cash_flow"]
         ctx_parts.append(f"Net cash flow: ${ncf:+.0f}")
-    if context.get("categories"):
-        top = sorted(context["categories"].items(), key=lambda x: x[1], reverse=True)[:5]
-        ctx_parts.append("Top spend: " + ", ".join(f"{k}=${v:.0f}" for k, v in top))
+
+    chart_cats = context.get("chart_categories", [])
+    if chart_cats:
+        top = chart_cats[:5]
+        ctx_parts.append("Top spend: " + ", ".join(f"{c['name']}=${c['value']:.0f}" for c in top))
+    elif context.get("categories"):
+        top_raw = sorted(context["categories"].items(), key=lambda x: x[1], reverse=True)[:5]
+        ctx_parts.append("Top spend: " + ", ".join(f"{k}=${v:.0f}" for k, v in top_raw))
+
+    top_txns = context.get("top_transactions", [])
+    if top_txns:
+        txn_text = ", ".join(f"{t['description']} ${t['amount']:.0f}" for t in top_txns[:3])
+        ctx_parts.append(f"Biggest purchases: {txn_text}")
 
     ctx_text      = " | ".join(ctx_parts) if ctx_parts else "No financial data loaded"
     history_block = f"\n{history_context}" if history_context else ""
 
+    # Inject fetched live data as a separate block so Gemma treats it as authoritative
+    fetched_block = f"\n\n=== LIVE FETCHED DATA (use this for your answer) ===\n{fetched_text}\n=== END LIVE DATA ===" if fetched_text else ""
+
+    def _month_count(p):
+        if p and ' to ' in p:
+            a, b = p.split(' to ')
+            ay, am = int(a[:4]), int(a[5:7])
+            by, bm = int(b[:4]), int(b[5:7])
+            return (by - ay) * 12 + (bm - am) + 1
+        return 1
+
+    n_months = _month_count(period)
+    period_instruction = (
+        f"\n\nCRITICAL — SELECTED PERIOD: {period} ({n_months} months). "
+        f"Every dollar figure in 'User financial data' below is the TOTAL for these {n_months} months — "
+        f"not monthly averages, not annualized. "
+        f"When you answer, say '{period}' for the time frame. "
+        f"NEVER say '13 months' or any duration other than {n_months} months. "
+        f"Do NOT recalculate durations by dividing totals by a monthly rate."
+    ) if period else ""
+
     messages = [{
         "role":    "system",
-        "content": NARRATOR_SYSTEM + f"\n\nUser's data: {ctx_text}{history_block}"
+        "content": (NARRATOR_SYSTEM + period_instruction
+                    + f"\n\nUser financial data ({period or 'selected period'}, {n_months} months total): "
+                    + ctx_text + history_block + fetched_block)
     }]
     for h in history[-6:]:
         messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": message})
 
-    t0 = time.time()
-    reply = ask_gemma_chat(messages, temperature=0.7, num_ctx=2048, num_predict=600)
-    gemma_ms = round((time.time() - t0) * 1000)
+    t3 = time.time()
+    reply     = ask_gemma_chat(messages, temperature=0.7, num_ctx=2048, num_predict=600)
+    gemma_ms  = round((time.time() - t3) * 1000)
+    total_ms  = round((time.time() - t_total) * 1000)
 
-    clean_reply, chart = _extract_chart(reply, context, message)
+    # Build chart — prefer live fetched data when available
+    if fetched and intent:
+        chart = build_chart_from_fetched(fetched, intent)
+        clean_reply = _PLACEHOLDER_RE.sub("", reply).strip()
+        clean_reply = _CHART_BOILERPLATE_RE.sub("", clean_reply).strip()
+        clean_reply = re.sub(r'\n{3,}', '\n\n', clean_reply)
+    else:
+        clean_reply, chart = _extract_chart(reply, context, message)
+
+    suggestions = _extract_suggestions(clean_reply, message, context)
     return jsonify({
-        "reply":  clean_reply,
-        "chart":  chart,
-        "timing": {"gemma_ms": gemma_ms, "total_ms": gemma_ms},
+        "reply":       clean_reply,
+        "chart":       chart,
+        "suggestions": suggestions,
+        "timing":      {"gemma_ms": gemma_ms, "phase1_ms": phase1_ms,
+                        "phase2_ms": phase2_ms, "total_ms": total_ms},
     })
 
 
 @narrative_bp.route("/coach", methods=["POST"])
 def spending_coach():
-    data        = request.get_json()
-    weekly_data = data.get("weekly_data", {})
+    data           = request.get_json()
+    weekly_data    = data.get("weekly_data", {})
+    budget_context = data.get("budget_context", {})
 
     categories = weekly_data.get("categories", {})
     total      = weekly_data.get("total", 0)
     vs_avg     = weekly_data.get("compared_to_avg", 0)
+    income     = weekly_data.get("income", 0)
 
-    income    = weekly_data.get("income", 0)
     top_cats  = sorted(categories.items(), key=lambda x: x[1], reverse=True)[:5]
     cat_text  = "\n".join(f"- {k}: ${v:.0f}" for k, v in top_cats)
     direction = "above" if vs_avg > 0 else "below"
 
-    # Build header with both income and spending
     header_parts = [f"Total spent: ${total:.0f} ({abs(vs_avg):.0f}% {direction} your average week)"]
     if income:
         net = income - total
         header_parts.append(f"Income received: ${income:.0f} | Net this week: ${net:+.0f}")
     fin_header = "\n".join(header_parts)
 
-    prompt = f"""Give 5 specific, actionable money tips based on this week's spending.
+    # Build budget section if available
+    budget_block = ""
+    if budget_context and budget_context.get("categories"):
+        day        = budget_context.get("day_of_month", 0)
+        days_total = budget_context.get("days_in_month", 30)
+        pct_month  = budget_context.get("pct_through_month", 0)
+        bud_cats   = budget_context.get("categories", {})
+
+        over   = [(cat, info) for cat, info in bud_cats.items() if info.get("over_budget")]
+        sorted_cats = sorted(bud_cats.items(), key=lambda x: x[1].get("pct_used", 0), reverse=True)
+        bud_lines = []
+        for cat, info in sorted_cats:
+            b = info.get("budget", 0)
+            s = info.get("spent_mtd", 0)
+            r = info.get("remaining", 0)
+            p = info.get("pct_used", 0)
+            status = "⚠ OVER BUDGET" if info.get("over_budget") else f"{p}% of budget used"
+            bud_lines.append(f"  {cat}: budget ${b:.0f} | spent MTD ${s:.0f} | remaining ${r:.0f} ({status})")
+
+        budget_block = (
+            f"\n\nMonthly budget status (day {day}/{days_total}, {pct_month}% through the month):\n"
+            + "\n".join(bud_lines)
+        )
+        if over:
+            over_names = ", ".join(cat for cat, _ in over)
+            budget_block += f"\nCategories OVER BUDGET: {over_names}"
+
+    prompt = f"""Give 5 specific, actionable money tips based on this week's spending and monthly budget status.
 
 {fin_header}
-{cat_text}
+This week by category:
+{cat_text}{budget_block}
 
 Rules:
 - Each tip must mention a specific dollar amount from the data above.
+- If a category is over budget or on pace to exceed it, flag it as high-impact.
 - For each tip assign: category (Reduce, Save, Habit, Goal, or Warning), impact (high, medium, or low), and a how_to action step (one short sentence, max 12 words).
+- At least one tip should reference the monthly budget if budget data is available.
 
 Reply only with JSON in this exact format:
 {{"tips": [{{"text": "tip text", "category": "Reduce", "impact": "high", "how_to": "Set a $X weekly limit for this category."}}, ...]}}"""

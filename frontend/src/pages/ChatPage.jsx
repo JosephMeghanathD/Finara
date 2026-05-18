@@ -2,18 +2,22 @@ import { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { aiApi } from '../utils/api'
 import { useTimeFilter } from '../hooks/useTimeFilter'
-import { Send, MessageSquare, Sparkles } from 'lucide-react'
+import { Send, MessageSquare, Sparkles, TrendingUp, TrendingDown } from 'lucide-react'
 import AiText from '../components/AiText'
 import { format, parseISO } from 'date-fns'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts'
+import {
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  LineChart, Line,
+} from 'recharts'
 
 const CAT_COLORS = {
   'Food & Drink': '#6366F1', 'Groceries': '#8B5CF6', 'Transport': '#0EA5E9',
   'Shopping': '#F59E0B', 'Entertainment': '#10B981', 'Healthcare': '#EF4444',
-  'Utilities': '#6366F1', 'Rent & Housing': '#84CC16', 'Travel': '#F97316',
+  'Utilities': '#6B7280', 'Rent & Housing': '#84CC16', 'Travel': '#F97316',
   'Financial': '#64748B', 'Subscriptions': '#A78BFA', 'Personal Care': '#EC4899',
 }
-const FALLBACK_COLORS = ['#6366F1','#8B5CF6','#0EA5E9','#F59E0B','#10B981','#EF4444','#F97316','#84CC16']
+const FALLBACK_COLORS = ['#6366F1','#8B5CF6','#0EA5E9','#F59E0B','#10B981','#EF4444','#F97316','#84CC16','#A78BFA','#EC4899']
 
 const TOOLTIP_STYLE = {
   contentStyle: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text)' },
@@ -21,41 +25,108 @@ const TOOLTIP_STYLE = {
   labelStyle: { color: 'var(--text-2)' },
 }
 
+const PHASES = [
+  { id: 1, label: 'Understanding your question…', dots: 1, color: '#8b5cf6' },
+  { id: 2, label: 'Fetching your data…',          dots: 2, color: '#5b9bff' },
+  { id: 3, label: 'Generating response…',          dots: 3, color: '#10b981' },
+]
+const PHASE_THRESHOLDS = [3500, 8000] // ms → switch to phase 2 at 3.5s, phase 3 at 8s
+
+const DEFAULT_SUGGESTIONS = [
+  'Where did I spend the most?',
+  'Show my spending breakdown chart',
+  'What can I cut back on?',
+  'Create a savings plan for me',
+  'Show income vs spending trend',
+  'What were my biggest purchases?',
+]
+
+function fmtRange(s, e) {
+  if (!s) return ''
+  const fmt = m => { try { return format(parseISO(m + '-01'), 'MMM yyyy') } catch { return m } }
+  return s === e ? fmt(s) : `${fmt(s)} – ${fmt(e)}`
+}
+
+function fmt$(n) {
+  const num = typeof n === 'number' && isFinite(n) ? n : 0
+  return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+}
+
+// ─── Inline chart rendered inside assistant messages ─────────────────────────
+
 function InlineChart({ chart }) {
   if (!chart || !chart.data?.length) return null
-  const total = chart.data.reduce((s, d) => s + d.value, 0)
+  const total = chart.data.reduce((s, d) => s + (d.value || 0), 0)
 
   const wrapper = (children, height = 220) => (
-    <div className="mt-3 rounded-xl overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
-      <p className="text-xs font-semibold px-4 pt-3 pb-1" style={{ color: 'var(--text-2)' }}>{chart.title}</p>
+    <div className="mt-4 rounded-xl overflow-hidden"
+      style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <p className="text-xs font-semibold px-4 pt-3 pb-1" style={{ color: 'var(--text-2)' }}>
+        {chart.title}
+      </p>
       <ResponsiveContainer width="100%" height={height}>{children}</ResponsiveContainer>
     </div>
   )
 
   if (chart.type === 'line') {
     const fmtMonth = m => { try { return format(parseISO(m + '-01'), 'MMM yy') } catch { return m } }
-    const lineData = chart.data.map(d => ({ ...d, month: fmtMonth(d.month) }))
+    // Use pre-built label (e.g. "May 2023") if available (YOY charts), else format YYYY-MM
+    const lineData = chart.data.map(d => ({
+      ...d,
+      _x: d.label || (d.month ? fmtMonth(d.month) : String(d.month)),
+    }))
+    const hasIncome = lineData.some(d => d.income != null)
     return wrapper(
       <LineChart data={lineData} margin={{ left: 8, right: 24, top: 8, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-        <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} />
+        <XAxis dataKey="_x" tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} />
         <YAxis tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} width={42} />
-        <Tooltip formatter={(v, name) => [`$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, name === 'total' ? 'Spent' : 'Income']} {...TOOLTIP_STYLE} />
-        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} formatter={v => v === 'total' ? 'Spent' : 'Income'} />
-        <Line type="monotone" dataKey="total" stroke="#6366F1" strokeWidth={2} dot={{ r: 3, fill: '#6366F1' }} activeDot={{ r: 5 }} />
-        <Line type="monotone" dataKey="income" stroke="#10B981" strokeWidth={2} dot={{ r: 3, fill: '#10B981' }} activeDot={{ r: 5 }} />
+        <Tooltip formatter={(v, name) => [`$${Number(v).toLocaleString()}`, name === 'total' ? 'Spent' : 'Income']} {...TOOLTIP_STYLE} />
+        {hasIncome && <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} formatter={v => v === 'total' ? 'Spent' : 'Income'} />}
+        <Line type="monotone" dataKey="total" stroke="#6366F1" strokeWidth={2} dot={{ r: 3, fill: '#6366F1' }} activeDot={{ r: 5 }} name="total" />
+        {hasIncome && <Line type="monotone" dataKey="income" stroke="#10B981" strokeWidth={2} dot={{ r: 3, fill: '#10B981' }} activeDot={{ r: 5 }} name="income" />}
       </LineChart>
     )
   }
 
-  if (chart.type === 'bar') {
-    const barHeight = Math.max(180, chart.data.length * 32 + 40)
+  if (chart.type === 'multi_line') {
+    const xKey   = chart.x_key || 'day'
+    const series = chart.series || []
+    const MLINE_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#f87171', '#8B5CF6', '#0EA5E9']
     return wrapper(
-      <BarChart data={chart.data} layout="vertical" margin={{ left: 8, right: 24, top: 8, bottom: 8 }}>
+      <LineChart data={chart.data} margin={{ left: 8, right: 24, top: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+        <XAxis dataKey={xKey}
+          tick={{ fontSize: 11, fill: 'var(--text-3)' }}
+          tickFormatter={v => xKey === 'day' ? `Day ${v}` : v}
+          axisLine={false} tickLine={false}
+          interval={Math.floor(chart.data.length / 8)} />
+        <YAxis tick={{ fontSize: 11, fill: 'var(--text-3)' }}
+          tickFormatter={v => `$${(v/1000).toFixed(0)}k`}
+          axisLine={false} tickLine={false} width={42} />
+        <Tooltip
+          formatter={(v, name) => [`$${Number(v).toLocaleString()}`, name]}
+          labelFormatter={v => xKey === 'day' ? `Day ${v}` : v}
+          {...TOOLTIP_STYLE} />
+        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+        {series.map((key, i) => (
+          <Line key={key} type="monotone" dataKey={key} name={key}
+            stroke={MLINE_COLORS[i % MLINE_COLORS.length]} strokeWidth={2}
+            dot={false} activeDot={{ r: 4 }} />
+        ))}
+      </LineChart>,
+      260
+    )
+  }
+
+  if (chart.type === 'bar') {
+    const barHeight = Math.max(200, chart.data.length * 34 + 60)
+    return wrapper(
+      <BarChart data={chart.data} layout="vertical" margin={{ left: 8, right: 32, top: 8, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
         <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickFormatter={v => `$${v}`} axisLine={false} tickLine={false} />
-        <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-2)' }} width={110} axisLine={false} tickLine={false} />
-        <Tooltip formatter={(v, name) => [`$${v.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, name]} {...TOOLTIP_STYLE} />
+        <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-2)' }} width={115} axisLine={false} tickLine={false} />
+        <Tooltip formatter={v => [`$${Number(v).toLocaleString()}`]} {...TOOLTIP_STYLE} />
         <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={20}>
           {chart.data.map((entry, i) => (
             <Cell key={i} fill={CAT_COLORS[entry.name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]} />
@@ -74,83 +145,301 @@ function InlineChart({ chart }) {
           <Cell key={i} fill={CAT_COLORS[entry.name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]} />
         ))}
       </Pie>
-      <Tooltip formatter={(v, name) => [`$${v.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${((v / total) * 100).toFixed(1)}%)`, name]} {...TOOLTIP_STYLE} />
+      <Tooltip formatter={(v, name) => [
+        `$${Number(v).toLocaleString()} (${total > 0 ? ((v / total) * 100).toFixed(1) : 0}%)`, name
+      ]} {...TOOLTIP_STYLE} />
       <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
     </PieChart>
   )
 }
 
-const THINKING_PHRASES = [
-  'Reading your transaction data…',
-  'Connecting the dots…',
-  'Running inference on Gemma 3…',
-  'Crafting a thoughtful response…',
-  'Cross-referencing your history…',
-]
+// ─── Inline transaction table ─────────────────────────────────────────────────
 
-const STARTERS = [
-  'Where did I spend the most this month?',
-  'What could I cut back on?',
-  'Am I spending more than last month?',
-  'How much did I spend on food?',
-  'What are my top 3 expenses?',
-  'What can Fiana do?',
-]
+function InlineTable({ chart }) {
+  const [sortCol, setSortCol] = useState('date')
+  const [sortDir, setSortDir] = useState('desc')
 
-function storyFollowups(story) {
-  const s = (story || '').toLowerCase()
-  const hits = []
-  if (s.includes('food') || s.includes('dining') || s.includes('restaurant'))
-    hits.push('How can I reduce my food and dining spending?')
-  if (s.includes('groceri'))
-    hits.push('How does my grocery spending look?')
-  if (s.includes('subscri'))
-    hits.push('Which subscriptions should I consider cancelling?')
-  if (s.includes('transport') || s.includes('uber') || s.includes('lyft') || s.includes('commut'))
-    hits.push('How can I cut my transport costs?')
-  if (s.includes('entertain'))
-    hits.push('What entertainment spending can I reduce?')
-  if (s.includes('shop') || s.includes('retail') || s.includes('amazon'))
-    hits.push('How much did I spend on shopping?')
-  if (s.includes('travel') || s.includes('hotel') || s.includes('flight') || s.includes('airbnb'))
-    hits.push('How can I manage my travel expenses better?')
-  if (s.includes('anomal') || s.includes('unusual') || s.includes('spike') || s.includes('flagged'))
-    hits.push('Tell me more about my unusual purchases')
-  if (s.includes('sav'))
-    hits.push('What\'s the best way to save more this month?')
-  hits.push('What were my biggest expenses?')
-  hits.push('Where should I cut back the most?')
-  hits.push('How does this compare to my previous month?')
-  return [...new Set(hits)].slice(0, 6)
+  if (!chart?.rows?.length) return null
+
+  const rows = [...chart.rows].sort((a, b) => {
+    if (sortCol === 'amount') return sortDir === 'desc' ? b.amount - a.amount : a.amount - b.amount
+    const va = String(a[sortCol] ?? ''), vb = String(b[sortCol] ?? '')
+    return sortDir === 'desc' ? vb.localeCompare(va) : va.localeCompare(vb)
+  })
+
+  const cols = [
+    { key: 'date',        label: 'Date',        w: '78px' },
+    { key: 'description', label: 'Merchant',     w: '1fr'  },
+    { key: 'amount',      label: 'Amount',       w: '76px' },
+    { key: 'category',    label: 'Category',     w: '108px'},
+  ]
+
+  const toggle = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
+    else { setSortCol(col); setSortDir('desc') }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl overflow-hidden"
+      style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <p className="text-xs font-semibold px-4 pt-3 pb-2" style={{ color: 'var(--text-2)' }}>
+        {chart.title}
+        <span className="ml-1.5 font-normal" style={{ color: 'var(--text-3)' }}>({rows.length})</span>
+      </p>
+
+      {/* Header */}
+      <div className="grid px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider"
+        style={{ gridTemplateColumns: '78px 1fr 76px 108px', borderTop: '1px solid var(--border)' }}>
+        {cols.map(c => (
+          <button key={c.key} onClick={() => toggle(c.key)}
+            className="text-left flex items-center gap-1 transition-colors"
+            style={{ color: sortCol === c.key ? 'var(--brand)' : 'var(--text-3)' }}>
+            {c.label}
+            {sortCol === c.key && <span style={{ fontSize: 10 }}>{sortDir === 'desc' ? '↓' : '↑'}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Rows */}
+      <div className="overflow-y-auto" style={{ maxHeight: 288 }}>
+        {rows.map((row, i) => {
+          const color = CAT_COLORS[row.category] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]
+          return (
+            <div key={row.id ?? i}
+              className="grid px-4 py-2 text-xs"
+              style={{
+                gridTemplateColumns: '78px 1fr 76px 108px',
+                borderTop: '1px solid var(--border)',
+                background: i % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent',
+                transition: 'background 0.1s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(91,155,255,0.05)'}
+              onMouseLeave={e => e.currentTarget.style.background = i % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent'}>
+              <span style={{ color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>
+                {row.date?.slice(5)}
+              </span>
+              <span className="truncate pr-2" style={{ color: 'var(--text-2)' }}>{row.description}</span>
+              <span style={{ color: 'var(--text)', fontFamily: '"JetBrains Mono", monospace', fontVariantNumeric: 'tabular-nums' }}>
+                ${Number(row.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </span>
+              <span className="truncate text-[10px] px-1.5 py-0.5 rounded-full self-center"
+                style={{ background: color + '22', color, border: `1px solid ${color}44`, maxWidth: 100 }}>
+                {row.category || 'Other'}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
-function fmtRange(s, e) {
-  if (!s) return ''
-  const fmt = m => { try { return format(parseISO(m + '-01'), 'MMM yyyy') } catch { return m } }
-  return s === e ? fmt(s) : `${fmt(s)} – ${fmt(e)}`
+// ─── Calendar heatmap ─────────────────────────────────────────────────────────
+
+function CalendarHeatmap({ chart }) {
+  const [tooltip, setTooltip] = useState(null)
+
+  if (!chart?.data) return null
+
+  const year     = parseInt(chart.year) || new Date().getFullYear()
+  const byDate   = {}
+  let   maxAmt   = 0
+  for (const row of chart.data) {
+    byDate[row.date] = row.amount
+    if (row.amount > maxAmt) maxAmt = row.amount
+  }
+
+  // Build 53-week × 7-day grid
+  const jan1   = new Date(year, 0, 1)
+  const offset = jan1.getDay()
+  const weeks  = []
+  let   week   = Array(offset).fill(null)
+
+  for (let d = 0; d < 366; d++) {
+    const date = new Date(year, 0, d + 1)
+    if (date.getFullYear() !== year) break
+    const iso = date.toISOString().slice(0, 10)
+    week.push({ date: iso, amount: byDate[iso] || 0, day: date.getDate(), month: date.getMonth() })
+    if (week.length === 7) { weeks.push(week); week = [] }
+  }
+  if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week) }
+
+  const getColor = (amount) => {
+    if (!amount) return 'rgba(91,155,255,0.07)'
+    const r = maxAmt > 0 ? amount / maxAmt : 0
+    if (r < 0.25) return 'rgba(91,155,255,0.22)'
+    if (r < 0.5)  return 'rgba(91,155,255,0.48)'
+    if (r < 0.75) return '#5b9bff'
+    return 'rgba(220,235,255,0.92)'
+  }
+
+  const total  = chart.data.reduce((s, r) => s + r.amount, 0)
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const DAYS   = ['S','M','T','W','T','F','S']
+
+  // Month label positions
+  const monthLabels = []
+  weeks.forEach((wk, wi) => {
+    const first = wk.find(d => d !== null)
+    if (first && first.day <= 7) monthLabels.push({ wi, label: MONTHS[first.month] })
+  })
+
+  return (
+    <div className="mt-4 rounded-xl p-4"
+      style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>{chart.title}</p>
+        <p className="text-xs" style={{ color: 'var(--text-3)', fontFamily: '"JetBrains Mono", monospace' }}>
+          ${total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+        </p>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div style={{ position: 'relative', minWidth: 580 }}>
+          {/* Month labels */}
+          <div style={{ display: 'flex', position: 'relative', height: 14, marginLeft: 20, marginBottom: 2 }}>
+            {monthLabels.map(({ wi, label }) => (
+              <div key={label} style={{ position: 'absolute', left: wi * 11, fontSize: 9, color: 'var(--text-3)', fontWeight: 500 }}>
+                {label}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: 2 }}>
+            {/* Day-of-week labels */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginRight: 2 }}>
+              {DAYS.map((d, i) => (
+                <div key={i} style={{ width: 9, height: 9, fontSize: 7, color: 'var(--text-3)', lineHeight: '9px', textAlign: 'center' }}>
+                  {i % 2 === 1 ? d : ''}
+                </div>
+              ))}
+            </div>
+
+            {/* Week columns */}
+            {weeks.map((wk, wi) => (
+              <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {wk.map((day, di) => (
+                  <div key={di}
+                    style={{
+                      width: 9, height: 9, borderRadius: 2,
+                      background: day !== null ? getColor(day.amount) : 'transparent',
+                      cursor: day?.amount ? 'crosshair' : 'default',
+                    }}
+                    onMouseEnter={day?.amount ? (e) => {
+                      const r = e.currentTarget.getBoundingClientRect()
+                      setTooltip({ date: day.date, amount: day.amount, x: r.left + r.width / 2, y: r.top - 6 })
+                    } : undefined}
+                    onMouseLeave={() => setTooltip(null)}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {/* Legend */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8, marginLeft: 20 }}>
+            <span style={{ fontSize: 9, color: 'var(--text-3)' }}>Less</span>
+            {['rgba(91,155,255,0.07)', 'rgba(91,155,255,0.22)', 'rgba(91,155,255,0.48)', '#5b9bff', 'rgba(220,235,255,0.92)'].map((bg, i) => (
+              <div key={i} style={{ width: 9, height: 9, borderRadius: 2, background: bg }} />
+            ))}
+            <span style={{ fontSize: 9, color: 'var(--text-3)' }}>More</span>
+          </div>
+        </div>
+      </div>
+
+      {tooltip && (
+        <div style={{
+          position: 'fixed', left: tooltip.x, top: tooltip.y,
+          transform: 'translateX(-50%) translateY(-100%)',
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 6, padding: '3px 8px', fontSize: 11, color: 'var(--text)',
+          pointerEvents: 'none', zIndex: 9999, whiteSpace: 'nowrap',
+        }}>
+          {tooltip.date}: ${Number(tooltip.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+        </div>
+      )}
+    </div>
+  )
 }
+
+// ─── Chart dispatcher ─────────────────────────────────────────────────────────
+
+function renderChart(chart) {
+  if (!chart) return null
+  if (chart.type === 'table')   return <InlineTable chart={chart} />
+  if (chart.type === 'heatmap') return <CalendarHeatmap chart={chart} />
+  if (!chart.data?.length)      return null
+  return <InlineChart chart={chart} />
+}
+
+// ─── Message bubbles ──────────────────────────────────────────────────────────
 
 function ThinkingBubble() {
-  const [phraseIdx, setPhraseIdx] = useState(0)
+  const [phaseIdx, setPhaseIdx] = useState(0)
+  const startMs = useRef(Date.now())
+
   useEffect(() => {
-    const t = setInterval(() => setPhraseIdx(i => (i + 1) % THINKING_PHRASES.length), 2200)
+    const tick = () => {
+      const elapsed = Date.now() - startMs.current
+      if (elapsed >= PHASE_THRESHOLDS[1]) { setPhaseIdx(2); return }
+      if (elapsed >= PHASE_THRESHOLDS[0]) { setPhaseIdx(1) }
+    }
+    const t = setInterval(tick, 400)
     return () => clearInterval(t)
   }, [])
+
+  const phase = PHASES[phaseIdx]
+
   return (
-    <div className="flex items-start gap-2.5 chat-message">
-      <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-        style={{ background: 'var(--brand-light)', boxShadow: '0 0 10px rgba(77,142,255,0.2)' }}>
+    <div className="flex items-start gap-3 chat-message">
+      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{ background: 'var(--brand-light)', border: '1px solid rgba(91,155,255,0.2)' }}>
         <Sparkles size={13} className="ai-pulse-icon" style={{ color: 'var(--brand)' }} />
       </div>
-      <div className="px-4 py-3.5 rounded-2xl flex flex-col gap-2"
-        style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderBottomLeftRadius: 6 }}>
-        <p key={phraseIdx} className="text-xs ai-msg-in" style={{ color: 'var(--text-3)' }}>
-          {THINKING_PHRASES[phraseIdx]}
-        </p>
-        <div className="flex gap-1.5 items-center">
-          {[0,1,2].map(i => (
+      <div className="px-4 py-3.5 rounded-2xl rounded-tl-sm flex flex-col gap-3"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', minWidth: 220 }}>
+
+        {/* Phase steps */}
+        <div className="flex flex-col gap-1.5">
+          {PHASES.map((p, i) => {
+            const done    = i < phaseIdx
+            const active  = i === phaseIdx
+            const pending = i > phaseIdx
+            return (
+              <div key={p.id} className="flex items-center gap-2">
+                {/* Step indicator */}
+                <div className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
+                  style={{
+                    background: done ? '#34d399' : active ? p.color : 'rgba(255,255,255,0.06)',
+                    border: pending ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                    boxShadow: active ? `0 0 8px ${p.color}55` : 'none',
+                  }}>
+                  {done && (
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                      <path d="M1.5 4L3 5.5L6.5 2.5" stroke="white" strokeWidth="1.3" strokeLinecap="round"/>
+                    </svg>
+                  )}
+                  {active && (
+                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'white' }} />
+                  )}
+                </div>
+                <span className="text-xs transition-all"
+                  style={{
+                    color: done ? '#34d399' : active ? 'var(--text)' : 'var(--text-3)',
+                    fontWeight: active ? 500 : 400,
+                  }}>
+                  {p.label}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Animated dots for active phase */}
+        <div className="flex gap-1.5">
+          {Array.from({ length: phase.dots }).map((_, i) => (
             <div key={i} className="w-1.5 h-1.5 rounded-full thinking-dot"
-              style={{ background: 'var(--brand)' }} />
+              style={{ background: phase.color, animationDelay: `${i * 0.18}s` }} />
           ))}
         </div>
       </div>
@@ -158,171 +447,329 @@ function ThinkingBubble() {
   )
 }
 
-function AssistantBubble({ content, chart, error }) {
+function AssistantBubble({ content, chart, error, timestamp }) {
   return (
-    <div className="flex items-start gap-2.5 chat-message">
-      <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 text-sm"
-        style={{ background: 'var(--brand-light)' }}>
-        <Sparkles size={13} style={{ color: 'var(--brand)' }} />
-      </div>
-      <div className="flex-1 min-w-0 px-4 py-3.5 rounded-2xl"
+    <div className="flex items-start gap-3 chat-message">
+      <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
         style={{
-          background: error ? 'rgba(239,68,68,0.06)' : 'var(--surface)',
-          border: `1px solid ${error ? 'rgba(239,68,68,0.25)' : 'var(--border)'}`,
-          borderBottomLeftRadius: 6,
+          background: error ? 'rgba(239,68,68,0.1)' : 'var(--brand-light)',
+          border: `1px solid ${error ? 'rgba(239,68,68,0.2)' : 'rgba(91,155,255,0.2)'}`,
         }}>
-        {error
-          ? <p className="text-sm" style={{ color: '#f87171' }}>{content}</p>
-          : <>
-              <AiText content={content} compact />
-              <InlineChart chart={chart} />
-            </>
-        }
+        <Sparkles size={13} style={{ color: error ? '#f87171' : 'var(--brand)' }} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="px-4 py-3.5 rounded-2xl rounded-tl-sm"
+          style={{
+            background: error ? 'rgba(239,68,68,0.06)' : 'var(--surface)',
+            border: `1px solid ${error ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`,
+          }}>
+          {error
+            ? <p className="text-sm" style={{ color: '#f87171' }}>{content}</p>
+            : <><AiText content={content} compact />{renderChart(chart)}</>
+          }
+        </div>
+        {timestamp && (
+          <p className="text-[10px] mt-1 ml-1" style={{ color: 'var(--text-3)' }}>
+            Fiana · {timestamp}
+          </p>
+        )}
       </div>
     </div>
   )
 }
 
-function UserBubble({ content }) {
+function UserBubble({ content, timestamp }) {
   return (
-    <div className="flex justify-end chat-message">
-      <div className="max-w-[72%] px-4 py-3 rounded-2xl text-sm leading-relaxed"
-        style={{ background: 'var(--brand)', color: 'white', borderBottomRightRadius: 6 }}>
+    <div className="flex flex-col items-end gap-1 chat-message">
+      <div className="max-w-[75%] px-4 py-3 rounded-2xl rounded-tr-sm text-sm leading-relaxed"
+        style={{ background: 'var(--brand)', color: 'white' }}>
         {content}
       </div>
+      {timestamp && (
+        <p className="text-[10px] mr-1" style={{ color: 'var(--text-3)' }}>{timestamp}</p>
+      )}
     </div>
   )
 }
 
+// ─── Context sidebar ──────────────────────────────────────────────────────────
+
+function ContextSidebar({ contextData, startMonth, endMonth, loading }) {
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3">
+        {[80, 64, 64, 140].map((h, i) => (
+          <div key={i} className="skeleton rounded-xl" style={{ height: h }} />
+        ))}
+      </div>
+    )
+  }
+
+  if (!contextData) return (
+    <p className="text-xs text-center mt-8" style={{ color: 'var(--text-3)' }}>No data loaded</p>
+  )
+
+  const { total_spent = 0, income = 0, net_cash_flow = 0, categories = {} } = contextData
+  const surplus = net_cash_flow >= 0
+  const topCats = Object.entries(categories).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  const maxCat  = topCats[0]?.[1] || 1
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {/* Period */}
+      <div className="rounded-xl px-3.5 py-2.5"
+        style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+        <p className="text-[10px] font-semibold uppercase tracking-widest mb-0.5" style={{ color: 'var(--text-3)' }}>
+          Period
+        </p>
+        <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+          {fmtRange(startMonth, endMonth) || '—'}
+        </p>
+      </div>
+
+      {/* Stats */}
+      {[
+        { label: 'Income',      value: fmt$(income),      color: '#34d399', icon: null },
+        { label: 'Total Spent', value: fmt$(total_spent),  color: 'var(--text)', icon: null },
+      ].map(({ label, value, color }) => (
+        <div key={label} className="rounded-xl px-3.5 py-2.5"
+          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest mb-0.5" style={{ color: 'var(--text-3)' }}>
+            {label}
+          </p>
+          <p className="text-sm font-bold" style={{ color, fontVariantNumeric: 'tabular-nums' }}>{value}</p>
+        </div>
+      ))}
+
+      {/* Net cash flow */}
+      <div className="rounded-xl px-3.5 py-2.5"
+        style={{
+          background: 'var(--surface-2)',
+          border: `1px solid ${surplus ? 'rgba(52,211,153,0.18)' : 'rgba(248,113,113,0.18)'}`,
+        }}>
+        <p className="text-[10px] font-semibold uppercase tracking-widest mb-0.5" style={{ color: 'var(--text-3)' }}>
+          Net Cash Flow
+        </p>
+        <div className="flex items-center gap-1.5">
+          {surplus
+            ? <TrendingUp size={12} style={{ color: '#34d399' }} />
+            : <TrendingDown size={12} style={{ color: '#f87171' }} />}
+          <p className="text-sm font-bold" style={{ color: surplus ? '#34d399' : '#f87171', fontVariantNumeric: 'tabular-nums' }}>
+            {surplus ? '+' : '-'}{fmt$(Math.abs(net_cash_flow))}
+          </p>
+        </div>
+      </div>
+
+      {/* Top spending categories */}
+      {topCats.length > 0 && (
+        <div className="rounded-xl px-3.5 py-3"
+          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--text-3)' }}>
+            Top Spending
+          </p>
+          <div className="flex flex-col gap-2.5">
+            {topCats.map(([cat, amt], i) => {
+              const color = CAT_COLORS[cat] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]
+              return (
+                <div key={cat}>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[11px] truncate" style={{ color: 'var(--text-2)', maxWidth: '62%' }}>{cat}</span>
+                    <span className="text-[11px] font-semibold" style={{ color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
+                      {fmt$(amt)}
+                    </span>
+                  </div>
+                  <div className="progress-track">
+                    <div className="progress-fill" style={{ width: `${(amt / maxCat) * 100}%`, background: color }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function ChatPage() {
-  const location = useLocation()
-  const storyCtx    = location.state?.storyContext
-  const prefillMsg  = location.state?.prefillMessage || ''
+  const location   = useLocation()
+  const storyCtx   = location.state?.storyContext
+  const prefillMsg = location.state?.prefillMessage || ''
   const { startMonth: globalStart, endMonth: globalEnd } = useTimeFilter()
 
-  // If arriving from Story page with context, use that period; otherwise use global filter
   const startMonth = storyCtx?.startMonth || globalStart
   const endMonth   = storyCtx?.endMonth   || globalEnd
 
-  const [messages, setMessages]     = useState(() => {
+  const [messages, setMessages] = useState(() => {
     if (!storyCtx?.story) return []
     return [{
       role: 'assistant',
       content: `I've just read your financial story for **${fmtRange(storyCtx.startMonth, storyCtx.endMonth)}**. I have full context of your spending for that period — ask me anything about it, or pick one of the suggestions below.`,
+      timestamp: format(new Date(), 'h:mm a'),
     }]
   })
-  const [starters, setStarters] = useState(() =>
-    storyCtx?.story ? storyFollowups(storyCtx.story) : STARTERS
-  )
-  const [input, setInput]           = useState(prefillMsg)
-  const [loading, setLoading]       = useState(false)
+
+  const [suggestions,    setSuggestions]    = useState(DEFAULT_SUGGESTIONS)
+  const [input,          setInput]          = useState(prefillMsg)
+  const [loading,        setLoading]        = useState(false)
+  const [contextData,    setContextData]    = useState(null)
+  const [ctxLoading,     setCtxLoading]     = useState(true)
   const bottomRef = useRef(null)
+  const inputRef  = useRef(null)
+
+  useEffect(() => {
+    if (!startMonth) { setCtxLoading(false); return }
+    setCtxLoading(true)
+    aiApi.storyData(startMonth, endMonth)
+      .then(r => setContextData(r.data))
+      .catch(() => {})
+      .finally(() => setCtxLoading(false))
+  }, [startMonth, endMonth])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
+  const now = () => format(new Date(), 'h:mm a')
+
   const send = async (text) => {
-    const msg = text || input.trim()
+    const msg = (text || input).trim()
     if (!msg || loading) return
     setInput('')
-    setMessages(prev => [...prev, { role: 'user', content: msg }])
+    setMessages(prev => [...prev, { role: 'user', content: msg, timestamp: now() }])
     setLoading(true)
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }))
       const { data } = await aiApi.chat({ message: msg, startMonth, endMonth, history })
-      setMessages(prev => [...prev, { role: 'assistant', content: data.reply, chart: data.chart || null }])
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: data.reply,
+        chart: data.chart || null,
+        timestamp: now(),
+      }])
+      if (data.suggestions?.length) setSuggestions(data.suggestions)
     } catch {
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: "Fiana's having a moment — make sure Ollama is running and try again.",
         error: true,
+        timestamp: now(),
       }])
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+      inputRef.current?.focus()
+    }
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)]">
-      <div className="flex items-center justify-between mb-4 flex-shrink-0 flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Ask Fiana</h2>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
-            Chat with Fiana powered by Gemma
-          </p>
-        </div>
-        <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5"
-          style={{ background: 'var(--brand-light)', color: 'var(--brand)',
-            border: '1px solid rgba(99,102,241,0.2)' }}>
-          <Sparkles size={11} /> Fiana AI
-        </span>
-      </div>
+    <div className="flex gap-5 h-[calc(100vh-80px)]">
 
-      <div className="flex-1 overflow-y-auto space-y-4 pb-4 pr-1">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full gap-4">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
-              style={{ background: 'var(--brand-light)' }}>
-              <MessageSquare size={28} style={{ color: 'var(--brand)' }} />
+      {/* ── Main chat column ─────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4 flex-shrink-0">
+          <div>
+            <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Ask Fiana</h2>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
+              Powered by Gemma 3 · {startMonth ? fmtRange(startMonth, endMonth) : 'all time'}
+            </p>
+          </div>
+          <span className="text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5"
+            style={{ background: 'var(--brand-light)', color: 'var(--brand)', border: '1px solid rgba(91,155,255,0.2)' }}>
+            <Sparkles size={11} /> Fiana AI
+          </span>
+        </div>
+
+        {/* Message thread */}
+        <div className="flex-1 overflow-y-auto space-y-4 pb-4 pr-1">
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full gap-5 pb-16">
+              <div className="relative">
+                <div className="w-20 h-20 rounded-2xl flex items-center justify-center"
+                  style={{ background: 'var(--brand-light)', border: '1px solid rgba(91,155,255,0.2)' }}>
+                  <MessageSquare size={32} style={{ color: 'var(--brand)' }} />
+                </div>
+                <div className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full flex items-center justify-center"
+                  style={{ background: 'var(--brand)' }}>
+                  <Sparkles size={11} style={{ color: 'white' }} />
+                </div>
+              </div>
+              <div className="text-center max-w-xs">
+                <p className="font-semibold text-base mb-2" style={{ color: 'var(--text)' }}>
+                  What do you want to know?
+                </p>
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--text-3)' }}>
+                  Fiana has full context of your {startMonth ? fmtRange(startMonth, endMonth) : ''} transactions.
+                  Ask about spending, patterns, savings, or anything financial.
+                </p>
+              </div>
             </div>
-            <div className="text-center">
-              <p className="font-semibold mb-1" style={{ color: 'var(--text)' }}>
-                {storyCtx?.story ? 'Follow up on your financial story' : 'Ask anything about your spending'}
-              </p>
-              <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-                Fiana has full context of your {startMonth ? fmtRange(startMonth, endMonth) : ''} transactions
-              </p>
+          )}
+
+          {messages.map((msg, i) =>
+            msg.role === 'user'
+              ? <UserBubble key={i} content={msg.content} timestamp={msg.timestamp} />
+              : <AssistantBubble key={i} content={msg.content} chart={msg.chart} error={msg.error} timestamp={msg.timestamp} />
+          )}
+
+          {loading && <ThinkingBubble />}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Bottom: suggestion chips + input */}
+        <div className="flex-shrink-0 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="pb-3">
+            <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              {suggestions.map((s, i) => (
+                <button key={s + i} onClick={() => send(s)} disabled={loading}
+                  className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full whitespace-nowrap transition-all"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-2)',
+                    border: '1px solid var(--border)', opacity: loading ? 0.5 : 1 }}
+                  onMouseEnter={e => { if (!loading) { e.currentTarget.style.borderColor='var(--brand)'; e.currentTarget.style.color='var(--brand)'; e.currentTarget.style.background='var(--brand-light)' }}}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.color='var(--text-2)'; e.currentTarget.style.background='var(--surface-2)' }}>
+                  {s}
+                </button>
+              ))}
             </div>
           </div>
-        )}
 
-        {messages.map((msg, i) =>
-          msg.role === 'user'
-            ? <UserBubble key={i} content={msg.content} />
-            : <AssistantBubble key={i} content={msg.content} chart={msg.chart} error={msg.error} />
-        )}
-
-        {loading && <ThinkingBubble />}
-
-        <div ref={bottomRef} />
-      </div>
-
-      <div className="flex-shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
-        <div className="pt-3 pb-2">
-          <p className="text-xs mb-2 px-1" style={{ color: 'var(--text-3)' }}>
-            {storyCtx?.story ? 'Suggested follow-ups' : 'Try asking'}
-          </p>
-          <div className="flex gap-2 overflow-x-auto pb-1"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-            {starters.map(s => (
-              <button key={s} onClick={() => send(s)} disabled={loading}
-                className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full transition-all whitespace-nowrap"
-                style={{ background: 'var(--surface)', color: 'var(--text-2)',
-                  border: '1px solid var(--border)', opacity: loading ? 0.5 : 1 }}
-                onMouseEnter={e => { if (!loading) { e.currentTarget.style.borderColor = 'var(--brand)'; e.currentTarget.style.color = 'var(--brand)'; e.currentTarget.style.background = 'var(--brand-light)' }}}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-2)'; e.currentTarget.style.background = 'var(--surface)' }}>
-                {s}
-              </button>
-            ))}
+          <div className="flex gap-2.5 pb-4">
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
+              placeholder="Ask about your spending, savings, or patterns…"
+              className="flex-1 px-4 py-3 rounded-xl text-sm"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+            />
+            <button onClick={() => send()} disabled={!input.trim() || loading}
+              className="btn-primary rounded-xl"
+              style={{ padding: '12px 16px', flexShrink: 0 }}>
+              <Send size={15} />
+            </button>
           </div>
         </div>
-        <div className="flex gap-3 pb-4">
-          <input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-            placeholder="Ask about your spending…"
-            className="flex-1 px-4 py-3.5 rounded-2xl text-sm outline-none"
-            style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-          />
-          <button onClick={() => send()} disabled={!input.trim() || loading}
-            className="px-4 py-3 rounded-xl flex items-center justify-center transition-all"
-            style={{ background: 'var(--brand)', color: 'white',
-              opacity: (!input.trim() || loading) ? 0.45 : 1 }}>
-            <Send size={15} />
-          </button>
-        </div>
       </div>
+
+      {/* ── Context sidebar ──────────────────────────────────────────────────── */}
+      <div className="w-60 flex-shrink-0 overflow-y-auto pb-4 hidden lg:block"
+        style={{ scrollbarWidth: 'none' }}>
+        <p className="text-[10px] font-semibold uppercase tracking-widest mb-3 pt-0.5"
+          style={{ color: 'var(--text-3)' }}>
+          Financial Context
+        </p>
+        <ContextSidebar
+          contextData={contextData}
+          startMonth={startMonth}
+          endMonth={endMonth}
+          loading={ctxLoading}
+        />
+      </div>
+
     </div>
   )
 }

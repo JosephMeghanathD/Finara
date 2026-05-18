@@ -58,6 +58,9 @@ public class TransactionService {
         @CacheEvict(value = "anomaly-explanations", allEntries = true),
         @CacheEvict(value = "coach",                allEntries = true),
         @CacheEvict(value = "budgets",              allEntries = true),
+        @CacheEvict(value = "compare-insights",     allEntries = true),
+        @CacheEvict(value = "subscriptions",        allEntries = true),
+        @CacheEvict(value = "merchant-leaderboard", allEntries = true),
     })
     @SuppressWarnings("unchecked")
     public Map<String, Object> uploadAndProcessPdf(MultipartFile file, Long userId) {
@@ -162,6 +165,9 @@ public class TransactionService {
         @CacheEvict(value = "anomaly-explanations", allEntries = true),
         @CacheEvict(value = "coach",                allEntries = true),
         @CacheEvict(value = "budgets",              allEntries = true),
+        @CacheEvict(value = "compare-insights",     allEntries = true),
+        @CacheEvict(value = "subscriptions",        allEntries = true),
+        @CacheEvict(value = "merchant-leaderboard", allEntries = true),
     })
     public Map<String, Object> uploadAndProcess(MultipartFile file, Long userId) {
         User user = userRepository.findById(userId)
@@ -539,12 +545,14 @@ public class TransactionService {
 
     @Transactional
     @Caching(evict = {
-        @CacheEvict(value = "months",    key = "#userId"),
-        @CacheEvict(value = "summaries", allEntries = true),
-        @CacheEvict(value = "reports",   allEntries = true),
-        @CacheEvict(value = "forecasts", allEntries = true),
-        @CacheEvict(value = "stories",   allEntries = true),
-        @CacheEvict(value = "coach",     allEntries = true),
+        @CacheEvict(value = "months",               key = "#userId"),
+        @CacheEvict(value = "summaries",            allEntries = true),
+        @CacheEvict(value = "reports",              allEntries = true),
+        @CacheEvict(value = "forecasts",            allEntries = true),
+        @CacheEvict(value = "stories",              allEntries = true),
+        @CacheEvict(value = "coach",                allEntries = true),
+        @CacheEvict(value = "subscriptions",        allEntries = true),
+        @CacheEvict(value = "merchant-leaderboard", allEntries = true),
     })
     public TransactionResponse createTransaction(Long userId, Map<String, Object> body) {
         User user = userRepository.findById(userId)
@@ -582,6 +590,8 @@ public class TransactionService {
         @CacheEvict(value = "stories",              allEntries = true),
         @CacheEvict(value = "anomaly-explanations", allEntries = true),
         @CacheEvict(value = "coach",                allEntries = true),
+        @CacheEvict(value = "subscriptions",        allEntries = true),
+        @CacheEvict(value = "merchant-leaderboard", allEntries = true),
     })
     public TransactionResponse updateTransaction(Long userId, Long txnId, Map<String, Object> body) {
         Transaction txn = transactionRepository.findById(txnId)
@@ -604,6 +614,8 @@ public class TransactionService {
         @CacheEvict(value = "stories",              allEntries = true),
         @CacheEvict(value = "anomaly-explanations", allEntries = true),
         @CacheEvict(value = "coach",                allEntries = true),
+        @CacheEvict(value = "subscriptions",        allEntries = true),
+        @CacheEvict(value = "merchant-leaderboard", allEntries = true),
     })
     public void deleteTransaction(Long userId, Long txnId) {
         Transaction txn = transactionRepository.findById(txnId)
@@ -641,6 +653,8 @@ public class TransactionService {
         @CacheEvict(value = "anomaly-explanations", allEntries = true),
         @CacheEvict(value = "coach",                allEntries = true),
         @CacheEvict(value = "budgets",              allEntries = true),
+        @CacheEvict(value = "subscriptions",        allEntries = true),
+        @CacheEvict(value = "merchant-leaderboard", allEntries = true),
     })
     public void deleteBatch(Long userId, String batchId) {
         transactionRepository.deleteByBatchIdAndUserId(batchId, userId);
@@ -656,6 +670,8 @@ public class TransactionService {
         @CacheEvict(value = "anomaly-explanations", allEntries = true),
         @CacheEvict(value = "coach",                allEntries = true),
         @CacheEvict(value = "budgets",              allEntries = true),
+        @CacheEvict(value = "subscriptions",        allEntries = true),
+        @CacheEvict(value = "merchant-leaderboard", allEntries = true),
     })
     public void deleteAllData(Long userId) {
         transactionRepository.deleteAllByUserId(userId);

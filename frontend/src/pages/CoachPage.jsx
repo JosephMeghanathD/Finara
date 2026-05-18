@@ -4,36 +4,26 @@ import { aiApi } from '../utils/api'
 import {
   RefreshCw, Sparkles, Zap, CheckCircle2, Circle, Copy,
   Lightbulb, ChevronDown, ChevronUp, MessageCircle, Flame,
-  AlertTriangle, TrendingDown,
+  AlertTriangle, TrendingDown, TrendingUp, Clock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import AiLoader from '../components/AiLoader'
-import { format, getISOWeek, getYear, startOfISOWeek, endOfISOWeek } from 'date-fns'
+import { format, getISOWeek, getYear, startOfISOWeek, endOfISOWeek, formatDistanceToNow, parseISO, getISODay } from 'date-fns'
 import ScrollFade from '../components/ScrollFade'
-import InfoTooltip from '../components/InfoTooltip'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const CATEGORY_CONFIG = {
-  Reduce:  { color: '#f97316', bg: 'rgba(249,115,22,0.1)',  border: 'rgba(249,115,22,0.25)' },
-  Save:    { color: '#10b981', bg: 'rgba(16,185,129,0.1)',  border: 'rgba(16,185,129,0.25)' },
-  Habit:   { color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)' },
-  Goal:    { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.25)' },
-  Warning: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.25)' },
-  Tip:     { color: '#6366f1', bg: 'rgba(99,102,241,0.1)', border: 'rgba(99,102,241,0.25)' },
+const CAT_CONFIG = {
+  Reduce:  { color: '#f97316', bg: 'rgba(249,115,22,0.08)',  border: 'rgba(249,115,22,0.25)',  glyph: '↓' },
+  Save:    { color: '#10b981', bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.25)',  glyph: '↑' },
+  Habit:   { color: '#a78bfa', bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.25)', glyph: '⟳' },
+  Goal:    { color: '#60a5fa', bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.25)',  glyph: '◎' },
+  Warning: { color: '#fbbf24', bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.25)',  glyph: '⚠' },
+  Tip:     { color: '#818cf8', bg: 'rgba(129,140,248,0.08)', border: 'rgba(129,140,248,0.25)', glyph: '●' },
 }
 
-const IMPACT_CONFIG = {
-  high:   { color: '#10b981', label: 'High impact' },
-  medium: { color: '#f59e0b', label: 'Med impact'  },
-  low:    { color: '#6b7194', label: 'Low impact'  },
-}
-
-const CARD_COLORS = ['#6366F1', '#8B5CF6', '#0EA5E9', '#F59E0B', '#10B981']
-const CARD_BG     = ['var(--brand-light)', 'rgba(139,92,246,0.08)', 'rgba(14,165,233,0.08)',
-                     'rgba(245,158,11,0.08)', 'rgba(16,185,129,0.08)']
-const CARD_ICONS  = ['💡', '🎯', '📊', '💰', '🏦']
-const ALL_CATS    = ['Reduce', 'Save', 'Habit', 'Goal', 'Warning']
+const IMPACT_COLOR = { high: '#10b981', medium: '#f59e0b', low: '#6b7194' }
+const ALL_CATS     = ['Reduce', 'Save', 'Habit', 'Goal', 'Warning']
+const DAY_LABELS   = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -68,26 +58,14 @@ function normalizeTip(tip) {
 
 function fmt0(n) { return Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }) }
 
-// ── Done state ────────────────────────────────────────────────────────────────
-
 const doneStorageKey = () => `done_${weekKey()}`
-function loadDone() {
-  try { return new Set(JSON.parse(localStorage.getItem(doneStorageKey()) || '[]')) }
-  catch { return new Set() }
-}
-function saveDone(set) {
-  localStorage.setItem(doneStorageKey(), JSON.stringify([...set]))
-}
-
-// ── Archive ───────────────────────────────────────────────────────────────────
+function loadDone()     { try { return new Set(JSON.parse(localStorage.getItem(doneStorageKey()) || '[]')) } catch { return new Set() } }
+function saveDone(set)  { localStorage.setItem(doneStorageKey(), JSON.stringify([...set])) }
 
 const ARCHIVE_KEY = 'coach_archive'
 const MAX_ARCHIVE = 8
 
-function loadArchive() {
-  try { return JSON.parse(localStorage.getItem(ARCHIVE_KEY) || '[]') }
-  catch { return [] }
-}
+function loadArchive() { try { return JSON.parse(localStorage.getItem(ARCHIVE_KEY) || '[]') } catch { return [] } }
 
 function saveToArchive(wk, weekLabel, tips, context) {
   try {
@@ -101,11 +79,8 @@ function saveToArchive(wk, weekLabel, tips, context) {
 }
 
 function getStreak(archive) {
-  // Count consecutive completed weeks (most recent first, excluding current)
   const current = weekKey()
-  const past = [...archive]
-    .filter(a => a.week !== current)
-    .sort((a, b) => b.week.localeCompare(a.week))
+  const past = [...archive].filter(a => a.week !== current).sort((a, b) => b.week.localeCompare(a.week))
   let streak = 0
   for (const entry of past) {
     try {
@@ -120,10 +95,7 @@ function getStreak(archive) {
 
 function getRecurringCategories(archive) {
   const current = weekKey()
-  const past = [...archive]
-    .filter(a => a.week !== current)
-    .sort((a, b) => b.week.localeCompare(a.week))
-    .slice(0, 3)
+  const past = [...archive].filter(a => a.week !== current).sort((a, b) => b.week.localeCompare(a.week)).slice(0, 3)
   if (past.length < 2) return []
   const counts = {}
   past.forEach(entry => {
@@ -136,7 +108,7 @@ function getRecurringCategories(archive) {
 function parseSavingsEstimate(tips) {
   let total = 0
   tips.forEach(tip => {
-    const norm = normalizeTip(tip)
+    const norm  = normalizeTip(tip)
     const match = norm.text.match(/\$[\d,]+(?:\.\d{2})?/)
     if (match) {
       const val = parseFloat(match[0].replace(/[$,]/g, ''))
@@ -146,188 +118,252 @@ function parseSavingsEstimate(tips) {
   return total
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function ContextCard({ ctx }) {
-  if (!ctx || ctx.total === 0) return null
-  const over = ctx.vs_avg_pct > 0
-  return (
-    <div className="card card-accent flex flex-wrap items-center gap-6 px-5 py-4">
-      <div>
-        <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-3)' }}>Spent this week</p>
-        <p className="stat-value" style={{ fontSize: '1.25rem' }}>${fmt0(ctx.total)}</p>
-      </div>
-      {ctx.vs_avg_pct !== 0 && (
-        <div>
-          <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-3)' }}>vs 4-week avg</p>
-          <p className="text-lg font-bold" style={{ color: over ? '#f87171' : '#34d399' }}>
-            {over ? '+' : ''}{Number(ctx.vs_avg_pct).toFixed(0)}%
-          </p>
-        </div>
-      )}
-      {ctx.income > 0 && (
-        <div>
-          <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-3)' }}>Income</p>
-          <p className="text-lg font-bold" style={{ color: '#34d399' }}>${fmt0(ctx.income)}</p>
-        </div>
-      )}
-      {ctx.top_category && (
-        <div>
-          <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-3)' }}>Top category</p>
-          <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{ctx.top_category}</p>
-        </div>
-      )}
-      <div className="ml-auto">
-        <p className="text-xs" style={{ color: 'var(--text-3)' }}>Week of {weekRangeLabel()}</p>
-      </div>
-    </div>
-  )
+function fmtAge(iso) {
+  if (!iso) return null
+  try { return formatDistanceToNow(parseISO(iso), { addSuffix: true }) }
+  catch { return null }
 }
 
-function FilterChips({ active, onSelect, tips }) {
-  const available = ALL_CATS.filter(c => tips.some(t => normalizeTip(t).category === c))
-  if (available.length < 2) return null
+// ── Week Day Progress ─────────────────────────────────────────────────────────
+
+function WeekDayDots() {
+  const today = getISODay(new Date())  // 1=Mon, 7=Sun
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-xs font-medium" style={{ color: 'var(--text-3)' }}>Filter:</span>
-      <button
-        onClick={() => onSelect(null)}
-        className="text-xs px-2.5 py-1 rounded-full font-medium transition-all"
-        style={{
-          background: active === null ? 'var(--brand)' : 'var(--surface-2)',
-          color: active === null ? 'white' : 'var(--text-3)',
-          border: `1px solid ${active === null ? 'var(--brand)' : 'var(--border)'}`,
-        }}>
-        All
-      </button>
-      {available.map(cat => {
-        const cfg = CATEGORY_CONFIG[cat] || CATEGORY_CONFIG.Tip
-        const isActive = active === cat
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      {DAY_LABELS.map((label, i) => {
+        const day     = i + 1
+        const isToday = day === today
+        const isPast  = day < today
         return (
-          <button
-            key={cat}
-            onClick={() => onSelect(isActive ? null : cat)}
-            className="text-xs px-2.5 py-1 rounded-full font-medium transition-all"
-            style={{
-              background: isActive ? cfg.bg : 'var(--surface-2)',
-              color: isActive ? cfg.color : 'var(--text-3)',
-              border: `1px solid ${isActive ? cfg.border : 'var(--border)'}`,
+          <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+            <div style={{
+              width: isToday ? 8 : 6,
+              height: isToday ? 8 : 6,
+              borderRadius: '50%',
+              background: isToday ? 'var(--brand)' : isPast ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)',
+              boxShadow: isToday ? '0 0 6px var(--brand)' : 'none',
+              transition: 'all 0.2s',
+            }} />
+            <span style={{
+              fontFamily: 'JetBrains Mono', fontSize: 7,
+              color: isToday ? 'var(--brand)' : isPast ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.12)',
+              lineHeight: 1, fontWeight: isToday ? 700 : 400,
             }}>
-            {cat}
-          </button>
+              {label}
+            </span>
+          </div>
         )
       })}
     </div>
   )
 }
 
-function TipCard({ tip, index, done, onToggleDone, onCopy }) {
-  const [expanded, setExpanded] = useState(false)
-  const norm    = normalizeTip(tip)
-  const catCfg  = CATEGORY_CONFIG[norm.category] || CATEGORY_CONFIG.Tip
-  const impCfg  = IMPACT_CONFIG[norm.impact]     || IMPACT_CONFIG.medium
-  const cardBg  = CARD_BG[index % CARD_BG.length]
+// ── Cache freshness badge ─────────────────────────────────────────────────────
+
+function FreshnessBadge({ generatedAt, cached }) {
+  const age = fmtAge(generatedAt)
+  if (!age) return null
+
+  const hoursOld = generatedAt
+    ? (Date.now() - new Date(generatedAt).getTime()) / 3600000
+    : 999
+  const isStale  = hoursOld > 48
+  const color    = isStale ? '#f59e0b' : '#10b981'
 
   return (
-    <div className="card card-i flex gap-4 h-full"
-      style={{ opacity: done ? 0.5 : 1, transition: 'opacity 0.2s' }}>
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl"
-        style={{ background: cardBg }}>
-        {CARD_ICONS[index % CARD_ICONS.length]}
-      </div>
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 4,
+      padding: '3px 8px', borderRadius: 6,
+      background: `${color}0F`, border: `1px solid ${color}28`,
+      flexShrink: 0,
+    }}>
+      <Clock size={9} style={{ color }} />
+      <span style={{ fontFamily: 'JetBrains Mono', fontSize: 9, color, fontWeight: 600 }}>
+        {age}
+      </span>
+    </div>
+  )
+}
 
-      <div className="flex-1 min-w-0">
-        {/* Badge row */}
-        <div className="flex items-center gap-2 mb-2 flex-wrap">
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-            style={{ background: catCfg.bg, color: catCfg.color, border: `1px solid ${catCfg.border}` }}>
-            {norm.category}
+// ── Progress Ring ─────────────────────────────────────────────────────────────
+
+function ProgressRing({ done, total }) {
+  const r    = 36
+  const circ = 2 * Math.PI * r
+  const pct  = total > 0 ? done / total : 0
+  const dash = circ * pct
+  const allDone = done === total && total > 0
+  const stroke  = allDone ? '#10b981' : '#5b9bff'
+
+  return (
+    <svg width="96" height="96" viewBox="0 0 96 96" style={{ overflow: 'visible' }}>
+      <circle cx="48" cy="48" r={r} fill="none" stroke="var(--surface-3)" strokeWidth="5.5" />
+      <circle cx="48" cy="48" r={r} fill="none"
+        stroke={stroke} strokeWidth="5.5" strokeLinecap="round"
+        strokeDasharray={`${dash} ${circ - dash}`}
+        strokeDashoffset={circ / 4}
+        style={{ transition: 'stroke-dasharray 0.7s cubic-bezier(0.34,1.56,0.64,1), stroke 0.4s' }}
+      />
+      {pct > 0 && pct < 1 && (
+        <circle
+          cx={48 + r * Math.cos((pct * 2 * Math.PI) - Math.PI / 2)}
+          cy={48 + r * Math.sin((pct * 2 * Math.PI) - Math.PI / 2)}
+          r="4" fill={stroke}
+          style={{ filter: `drop-shadow(0 0 4px ${stroke})` }}
+        />
+      )}
+      <text x="48" y="44" textAnchor="middle" fill="var(--text)"
+        fontSize="22" fontWeight="800" fontFamily="Manrope" dominantBaseline="middle">
+        {done}
+      </text>
+      <text x="48" y="60" textAnchor="middle" fill="var(--text-3)"
+        fontSize="11" fontFamily="DM Sans" dominantBaseline="middle">
+        of {total}
+      </text>
+    </svg>
+  )
+}
+
+// ── Tip Card ──────────────────────────────────────────────────────────────────
+
+function TipCard({ tip, index, done, onToggleDone, onCopy }) {
+  const norm    = normalizeTip(tip)
+  const cfg     = CAT_CONFIG[norm.category] || CAT_CONFIG.Tip
+  const num     = String(index + 1).padStart(2, '0')
+  const impDots = norm.impact === 'high' ? 3 : norm.impact === 'medium' ? 2 : 1
+  const impClr  = IMPACT_COLOR[norm.impact] || IMPACT_COLOR.medium
+  const impLbl  = norm.impact === 'high' ? 'High' : norm.impact === 'medium' ? 'Medium' : 'Low'
+
+  return (
+    <div className="tip-slide-in" style={{ animationDelay: `${index * 65}ms` }}>
+      <div style={{
+        display:    'flex',
+        background: 'var(--surface)',
+        border:     `1px solid ${done ? 'var(--border)' : cfg.border}`,
+        borderRadius: 14,
+        overflow:   'hidden',
+        opacity:    done ? 0.5 : 1,
+        transition: 'opacity 0.25s ease, border-color 0.25s ease',
+        boxShadow:  done ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.35)',
+      }}>
+        {/* Number column */}
+        <div style={{
+          width: 76, flexShrink: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: done ? 'var(--surface-2)' : cfg.bg,
+          borderRight: `1px solid ${done ? 'var(--border)' : cfg.border}`,
+          padding: '24px 0', gap: 6, transition: 'background 0.25s',
+          position: 'relative', overflow: 'hidden',
+        }}>
+          <span aria-hidden style={{
+            position: 'absolute', fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: 72, lineHeight: 1, color: cfg.color, opacity: 0.06,
+            userSelect: 'none', bottom: -8, right: -4,
+          }}>{num}</span>
+          <span style={{
+            fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, lineHeight: 1,
+            color: done ? '#10b981' : cfg.color, letterSpacing: 1,
+            transition: 'color 0.25s', zIndex: 1,
+          }}>
+            {done ? '✓' : num}
           </span>
-          <span className="flex items-center gap-1 text-xs" style={{ color: impCfg.color }}>
-            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: impCfg.color }} />
-            {impCfg.label}
-          </span>
-          <div className="flex-1" />
-          {/* Ask Fiana */}
-          <Link
-            to="/chat"
-            state={{ prefillMessage: `Tell me more about this tip: "${norm.text}"` }}
-            title="Ask Fiana about this tip"
-            className="p-1 rounded transition-colors flex items-center"
-            style={{ color: 'var(--text-3)' }}
-            onMouseEnter={e => e.currentTarget.style.color = 'var(--brand)'}
-            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
-            <MessageCircle size={12} />
-          </Link>
-          {/* Copy */}
-          <button onClick={() => onCopy(norm.text)} title="Copy tip"
-            className="p-1 rounded transition-colors"
-            style={{ color: 'var(--text-3)' }}
-            onMouseEnter={e => e.currentTarget.style.color = 'var(--text)'}
-            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
-            <Copy size={12} />
-          </button>
-          {/* Done toggle */}
-          <button onClick={() => onToggleDone(index)}
-            title={done ? 'Mark undone' : 'Mark as done'}
-            className="p-1 rounded transition-colors"
-            style={{ color: done ? '#10b981' : 'var(--text-3)' }}
-            onMouseEnter={e => e.currentTarget.style.color = done ? '#34d399' : '#10b981'}
-            onMouseLeave={e => e.currentTarget.style.color = done ? '#10b981' : 'var(--text-3)'}>
-            {done ? <CheckCircle2 size={14} /> : <Circle size={14} />}
-          </button>
+          {!done && (
+            <span style={{
+              fontSize: 11, fontWeight: 700, color: cfg.color, opacity: 0.7,
+              fontFamily: "'Manrope', sans-serif", letterSpacing: '0.05em', zIndex: 1,
+            }}>
+              {cfg.glyph}
+            </span>
+          )}
         </div>
 
-        {/* Tip text */}
-        <p style={{
-          fontFamily: "'Plus Jakarta Sans', 'DM Sans', sans-serif",
-          fontSize: '0.9rem', lineHeight: 1.75,
-          color: done ? 'var(--text-3)' : 'var(--text-2)',
-          textDecoration: done ? 'line-through' : 'none',
-        }}>
-          {norm.text}
-        </p>
-
-        {/* How-to action step */}
-        {norm.how_to && (
-          <div className="mt-2">
-            <button
-              onClick={() => setExpanded(v => !v)}
-              className="flex items-center gap-1 text-xs font-medium transition-colors"
-              style={{ color: catCfg.color }}>
-              {expanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-              {expanded ? 'Hide action step' : 'How to act on this'}
+        {/* Content column */}
+        <div style={{ flex: 1, minWidth: 0, padding: '18px 20px 18px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+            <span style={{
+              fontFamily: "'Manrope', sans-serif", fontSize: 10, fontWeight: 700,
+              letterSpacing: '0.1em', textTransform: 'uppercase',
+              color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`,
+              borderRadius: 4, padding: '2px 7px',
+            }}>
+              {norm.category}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              {[0,1,2].map(d => (
+                <div key={d} style={{
+                  width: 5, height: 5, borderRadius: '50%',
+                  background: d < impDots ? impClr : 'var(--surface-3)',
+                  transition: 'background 0.2s',
+                }} />
+              ))}
+              <span style={{ fontSize: 10, color: 'var(--text-3)', marginLeft: 4, fontFamily: "'DM Sans', sans-serif" }}>
+                {impLbl} impact
+              </span>
+            </div>
+            <div style={{ flex: 1 }} />
+            <Link
+              to="/chat"
+              state={{ prefillMessage: `Tell me more about this tip: "${norm.text}"` }}
+              title="Ask Fiana about this tip"
+              style={{ color: 'var(--text-3)', padding: '4px', lineHeight: 0, display: 'flex', transition: 'color 0.15s' }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--brand)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
+              <MessageCircle size={13} />
+            </Link>
+            <button onClick={() => onCopy(norm.text)} title="Copy tip"
+              style={{ color: 'var(--text-3)', padding: '4px', lineHeight: 0, background: 'none', border: 'none', cursor: 'pointer', transition: 'color 0.15s' }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--text)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
+              <Copy size={13} />
             </button>
-            {expanded && (
-              <div className="mt-1.5 px-3 py-2 rounded-lg text-xs leading-relaxed"
-                style={{ background: catCfg.bg, color: 'var(--text-2)', border: `1px solid ${catCfg.border}` }}>
-                {norm.how_to}
-              </div>
-            )}
+            <button onClick={() => onToggleDone(index)} title={done ? 'Mark undone' : 'Mark done'}
+              style={{ color: done ? '#10b981' : 'var(--text-3)', padding: '4px', lineHeight: 0, background: 'none', border: 'none', cursor: 'pointer', transition: 'color 0.15s' }}
+              onMouseEnter={e => e.currentTarget.style.color = done ? '#34d399' : '#10b981'}
+              onMouseLeave={e => e.currentTarget.style.color = done ? '#10b981' : 'var(--text-3)'}>
+              {done ? <CheckCircle2 size={15} /> : <Circle size={15} />}
+            </button>
           </div>
-        )}
+
+          <p style={{
+            fontFamily: "'Plus Jakarta Sans', 'DM Sans', sans-serif",
+            fontSize: '0.9rem', lineHeight: 1.78,
+            color: done ? 'var(--text-3)' : 'var(--text-2)',
+            textDecoration: done ? 'line-through' : 'none',
+            marginBottom: norm.how_to && !done ? 12 : 0,
+          }}>
+            {norm.text}
+          </p>
+
+          {norm.how_to && !done && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8,
+              padding: '9px 12px', borderRadius: 8,
+              background: cfg.bg, border: `1px solid ${cfg.border}`,
+            }}>
+              <Zap size={11} style={{ color: cfg.color, flexShrink: 0, marginTop: 2 }} />
+              <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: '0.8rem', lineHeight: 1.5, color: 'var(--text-2)', margin: 0 }}>
+                {norm.how_to}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
+// ── Archive ───────────────────────────────────────────────────────────────────
+
 function ArchiveSection({ archive }) {
   const [open, setOpen] = useState(false)
   const current = weekKey()
-  const past = [...archive]
-    .filter(a => a.week !== current)
-    .sort((a, b) => b.week.localeCompare(a.week))
-    .slice(0, 4)
+  const past = [...archive].filter(a => a.week !== current).sort((a, b) => b.week.localeCompare(a.week)).slice(0, 4)
   if (past.length === 0) return null
 
   return (
     <div className="card">
-      <button
-        className="w-full flex items-center justify-between"
-        onClick={() => setOpen(v => !v)}>
-        <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-          Previous weeks
-        </span>
+      <button className="w-full flex items-center justify-between" onClick={() => setOpen(v => !v)}>
+        <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Previous weeks</span>
         <div className="flex items-center gap-2">
           <span className="text-xs" style={{ color: 'var(--text-3)' }}>{past.length} week{past.length !== 1 ? 's' : ''}</span>
           {open ? <ChevronUp size={14} style={{ color: 'var(--text-3)' }} /> : <ChevronDown size={14} style={{ color: 'var(--text-3)' }} />}
@@ -335,43 +371,41 @@ function ArchiveSection({ archive }) {
       </button>
 
       {open && (
-        <div className="mt-4 space-y-5">
+        <div className="mt-5 space-y-5">
           {past.map(entry => {
             let doneSet = new Set()
-            try { doneSet = new Set(JSON.parse(localStorage.getItem(`done_${entry.week}`) || '[]')) }
-            catch {}
+            try { doneSet = new Set(JSON.parse(localStorage.getItem(`done_${entry.week}`) || '[]')) } catch {}
             const total     = (entry.tips || []).length
             const doneCount = [...doneSet].filter(i => i < total).length
             const allDone   = total > 0 && doneCount === total
 
             return (
               <div key={entry.week}>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2.5">
                   <span className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>
                     {entry.weekLabel || entry.week}
                   </span>
                   <span className="text-xs px-2 py-0.5 rounded-full"
-                    style={{
-                      background: allDone ? 'rgba(16,185,129,0.1)' : 'var(--surface-2)',
-                      color: allDone ? '#34d399' : 'var(--text-3)',
-                    }}>
+                    style={{ background: allDone ? 'rgba(16,185,129,0.1)' : 'var(--surface-2)', color: allDone ? '#34d399' : 'var(--text-3)' }}>
                     {allDone ? '✓ All done' : `${doneCount}/${total} done`}
                   </span>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {(entry.tips || []).map((tip, i) => {
-                    const norm   = normalizeTip(tip)
-                    const catCfg = CATEGORY_CONFIG[norm.category] || CATEGORY_CONFIG.Tip
+                    const norm = normalizeTip(tip)
+                    const cfg  = CAT_CONFIG[norm.category] || CAT_CONFIG.Tip
                     const wasDone = doneSet.has(i)
                     return (
-                      <div key={i} className="flex items-start gap-2 text-xs py-1.5 px-2 rounded-lg"
-                        style={{ background: 'var(--surface-2)', opacity: wasDone ? 0.6 : 1 }}>
-                        <span className="font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 mt-0.5"
-                          style={{ background: catCfg.bg, color: catCfg.color, fontSize: '0.65rem' }}>
+                      <div key={i} className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl"
+                        style={{ background: 'var(--surface-2)', opacity: wasDone ? 0.55 : 1 }}>
+                        <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, color: cfg.color, flexShrink: 0, lineHeight: 1.6, letterSpacing: 1 }}>
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                        <span className="text-xs flex-shrink-0 px-1.5 py-0.5 rounded mt-0.5"
+                          style={{ background: cfg.bg, color: cfg.color, fontWeight: 700, fontFamily: "'Manrope', sans-serif", letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: 9 }}>
                           {norm.category}
                         </span>
-                        <span style={{ color: wasDone ? 'var(--text-3)' : 'var(--text-2)',
-                          textDecoration: wasDone ? 'line-through' : 'none', lineHeight: 1.6 }}>
+                        <span style={{ fontSize: '0.8125rem', lineHeight: 1.6, color: wasDone ? 'var(--text-3)' : 'var(--text-2)', textDecoration: wasDone ? 'line-through' : 'none', fontFamily: "'DM Sans', sans-serif" }}>
                           {norm.text}
                         </span>
                       </div>
@@ -387,66 +421,94 @@ function ArchiveSection({ archive }) {
   )
 }
 
+// ── Loader ────────────────────────────────────────────────────────────────────
+
+function CoachLoader() {
+  return (
+    <div style={{ background: 'var(--surface)', borderRadius: 14, padding: '28px 24px', border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3, height: 28, flexShrink: 0 }}>
+          {[0, 0.13, 0.26, 0.39, 0.26, 0.13, 0].map((delay, i) => (
+            <div key={i} className="wave-bar" style={{
+              width: 3, height: '100%', borderRadius: 999,
+              background: 'linear-gradient(180deg, var(--brand), rgba(167,139,250,0.65))',
+              animationDelay: `${delay}s`, transformOrigin: 'center',
+            }} />
+          ))}
+        </div>
+        <div>
+          <p style={{ fontFamily: 'Bebas Neue, sans-serif', fontSize: 14, letterSpacing: '0.08em', color: 'var(--brand)', marginBottom: 2 }}>
+            Fiana is crafting your weekly brief
+          </p>
+          <p style={{ fontFamily: 'JetBrains Mono', fontSize: 10, color: 'var(--text-3)' }}>
+            Analyzing this week's spending patterns… (~10–15s)
+          </p>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {[1, 0.85, 0.92, 0.78, 0.88].map((w, i) => (
+          <div key={i} className="skeleton" style={{ height: 68, borderRadius: 10, width: `${w * 100}%` }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CoachPage() {
-  const [tips, setTips]             = useState([])
-  const [context, setContext]       = useState(null)
-  const [loading, setLoading]       = useState(false)
-  const [timing, setTiming]         = useState(null)
-  const [cached, setCached]         = useState(false)
-  const [done, setDone]             = useState(() => loadDone())
-  const [archive, setArchive]       = useState(() => loadArchive())
-  const [activeFilter, setFilter]   = useState(null)
+  const [tips,       setTips]       = useState([])
+  const [context,    setContext]    = useState(null)
+  const [loading,    setLoading]    = useState(false)
+  const [cached,     setCached]     = useState(false)
+  const [generatedAt, setGeneratedAt] = useState(null)
+  const [done,       setDone]       = useState(() => loadDone())
+  const [archive,    setArchive]    = useState(() => loadArchive())
+  const [activeFilter, setFilter]  = useState(null)
   const [showCelebration, setCelebration] = useState(false)
-  const celebratedRef               = useRef(false)
+  const celebratedRef = useRef(false)
 
-  // Mark coach page as visited (for mid-week nudge)
-  useEffect(() => {
-    localStorage.setItem(`coach_visited_${weekKey()}`, '1')
-  }, [])
+  useEffect(() => { localStorage.setItem(`coach_visited_${weekKey()}`, '1') }, [])
 
-  // Celebration when all tips done
   useEffect(() => {
     if (tips.length > 0 && done.size >= tips.length && !celebratedRef.current) {
       celebratedRef.current = true
       setCelebration(true)
-      setTimeout(() => setCelebration(false), 5000)
+      setTimeout(() => setCelebration(false), 6000)
     }
   }, [done.size, tips.length])
 
   const fetchTips = async (forceRefresh = false) => {
     const key = weekKey()
+
+    // On page load (no forceRefresh): serve from localStorage if available
     if (!forceRefresh) {
       const stored = localStorage.getItem(key)
       if (stored) {
         try {
           const parsed = JSON.parse(stored)
-          const t = parsed.tips || []
-          const c = parsed.context || null
-          setTips(t)
-          setContext(c)
-          setTiming(parsed.gemma_ms || null)
+          setTips(parsed.tips || [])
+          setContext(parsed.context || null)
+          setGeneratedAt(parsed.generatedAt || null)
           setCached(true)
-          saveToArchive(key, weekRangeLabel(), t, c)
+          saveToArchive(key, weekRangeLabel(), parsed.tips || [], parsed.context || null)
           setArchive(loadArchive())
           return
         } catch {}
       }
     }
-    setLoading(true)
-    setTips([])
-    setContext(null)
-    setCached(false)
+
+    // Force regenerate: tell backend to evict cache + regenerate fresh tips
+    setLoading(true); setTips([]); setContext(null); setCached(false)
     celebratedRef.current = false
+
     try {
-      const { data } = await aiApi.coach()
-      const t = data.tips    || []
-      const c = data.context || null
-      setTips(t)
-      setContext(c)
-      setTiming(data.timing?.gemma_ms || null)
-      localStorage.setItem(key, JSON.stringify({ tips: t, context: c, gemma_ms: data.timing?.gemma_ms }))
+      const { data } = await aiApi.coach(null, forceRefresh || undefined)
+      const t  = data.tips    || []
+      const c  = data.context || null
+      const ts = new Date().toISOString()
+      setTips(t); setContext(c); setGeneratedAt(ts); setCached(false)
+      localStorage.setItem(key, JSON.stringify({ tips: t, context: c, generatedAt: ts }))
       saveToArchive(key, weekRangeLabel(), t, c)
       setArchive(loadArchive())
     } catch {
@@ -469,8 +531,14 @@ export default function CoachPage() {
     navigator.clipboard.writeText(text).then(() => toast.success('Tip copied!'))
   }, [])
 
+  const handleRegenerate = () => {
+    toast('Regenerating… this takes ~15 seconds', { icon: '⏳', duration: 4000 })
+    fetchTips(true)
+  }
+
   const doneCount       = [...done].filter(i => i < tips.length).length
   const totalTips       = tips.length
+  const allDone         = totalTips > 0 && doneCount === totalTips
   const streak          = getStreak(archive)
   const recurringCats   = getRecurringCategories(archive)
   const savingsEstimate = parseSavingsEstimate(tips)
@@ -479,176 +547,285 @@ export default function CoachPage() {
     ? tips.map((t, i) => ({ tip: t, origIndex: i })).filter(({ tip }) => normalizeTip(tip).category === activeFilter)
     : tips.map((t, i) => ({ tip: t, origIndex: i }))
 
+  const catCounts    = ALL_CATS.reduce((acc, cat) => {
+    acc[cat] = tips.filter(t => normalizeTip(t).category === cat).length; return acc
+  }, {})
+  const availableCats = ALL_CATS.filter(c => catCounts[c] > 0)
+  const pctDone       = totalTips > 0 ? (doneCount / totalTips) * 100 : 0
+  const ctx           = context
+
   return (
-    <div className="space-y-5">
+    <>
+      <style>{`
+        @keyframes tipSlideIn {
+          from { opacity: 0; transform: translateX(-14px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        .tip-slide-in { animation: tipSlideIn 0.38s cubic-bezier(0.16,1,0.3,1) both; }
 
-      {/* ── Header ── */}
-      <ScrollFade delay={0}>
-        <div className="flex items-start justify-between flex-wrap gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-semibold" style={{ color: 'var(--text)' }}>Weekly Coach</h2>
-              <InfoTooltip
-                title="Weekly Coach"
-                content="Gemma 3 generates 5 personalized spending tips from your transactions this week. Each tip includes a category, impact level, and an action step. Results are cached for the week — Refresh to regenerate."
-              />
-            </div>
-            <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
-              {totalTips > 0
-                ? `${weekRangeLabel()} · ${doneCount}/${totalTips} completed`
-                : `${weekRangeLabel()} · Personalized tips from Fiana AI`}
-            </p>
-          </div>
+        @keyframes celebratePop {
+          0%   { transform: scale(0.94); opacity: 0; }
+          60%  { transform: scale(1.02); }
+          100% { transform: scale(1);    opacity: 1; }
+        }
+        .celebrate-pop { animation: celebratePop 0.45s cubic-bezier(0.34,1.56,0.64,1) both; }
+      `}</style>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Streak badge */}
-            {streak > 0 && (
-              <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg font-semibold"
-                style={{ background: 'rgba(249,115,22,0.1)', color: '#f97316', border: '1px solid rgba(249,115,22,0.25)' }}>
-                <Flame size={11} /> {streak} week streak
-              </span>
-            )}
-            <span className="text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1.5"
-              style={{ background: 'var(--brand-light)', color: 'var(--brand)', border: '1px solid rgba(99,102,241,0.2)' }}>
-              <Sparkles size={11} /> Fiana AI
-            </span>
-            {cached && (
-              <span className="text-xs px-2 py-0.5 rounded-full"
-                style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>
-                cached
-              </span>
-            )}
-            {timing && !cached && (
-              <span className="text-xs flex items-center gap-0.5 px-1.5 py-0.5 rounded-full"
-                style={{ background: 'rgba(16,185,129,0.08)', color: '#34d399' }}>
-                <Zap size={9} /> {(timing / 1000).toFixed(1)}s
-              </span>
-            )}
-            <button onClick={() => fetchTips(true)} disabled={loading} className="btn-ghost text-sm flex items-center gap-1.5">
-              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh
-            </button>
-          </div>
-        </div>
-      </ScrollFade>
+      <div className="space-y-5">
 
-      {/* ── Recurring pattern warning ── */}
-      {recurringCats.length > 0 && !loading && (
-        <ScrollFade delay={30}>
-          <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
-            style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.22)' }}>
-            <AlertTriangle size={14} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 2 }} />
+        {/* ── Header ── */}
+        <ScrollFade delay={0}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
             <div>
-              <p className="text-sm font-semibold" style={{ color: '#fbbf24' }}>Persistent pattern detected</p>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
-                <span className="font-medium" style={{ color: 'var(--text-2)' }}>
-                  {recurringCats.join(', ')}
-                </span>{' '}
-                tips have appeared for 2+ consecutive weeks — these habits may need more attention.
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <h2 style={{ fontFamily: 'Bebas Neue, sans-serif', fontSize: 26, letterSpacing: '0.05em', color: 'var(--text)', lineHeight: 1 }}>
+                  Weekly Coach
+                </h2>
+                {streak > 0 && (
+                  <span style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+                    padding: '3px 8px', borderRadius: 6,
+                    background: 'rgba(249,115,22,0.1)', color: '#f97316',
+                    border: '1px solid rgba(249,115,22,0.25)',
+                    fontFamily: "'Manrope', sans-serif",
+                  }}>
+                    <Flame size={10} /> {streak} WK STREAK
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'DM Sans' }}>
+                  {weekRangeLabel()}
+                </p>
+                <WeekDayDots />
+                {generatedAt && cached && <FreshnessBadge generatedAt={generatedAt} cached={cached} />}
+              </div>
+            </div>
+
+            {/* Right actions */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                fontSize: 10, padding: '4px 10px', borderRadius: 6,
+                background: 'var(--brand-light)', color: 'var(--brand)',
+                border: '1px solid rgba(91,155,255,0.2)',
+              }}>
+                <Sparkles size={10} /> Fiana AI
+              </span>
+
+              {/* Regenerate button — only shows when we have cached data and are not loading */}
+              {!loading && (
+                <button
+                  onClick={handleRegenerate}
+                  disabled={loading}
+                  title="Regenerate fresh tips from AI (~15s)"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 14px', borderRadius: 9, fontSize: 11, fontWeight: 600,
+                    background: cached ? 'var(--surface)' : 'rgba(91,155,255,0.1)',
+                    color: cached ? 'var(--text-2)' : 'var(--brand)',
+                    border: cached ? '1px solid var(--border)' : '1px solid rgba(91,155,255,0.25)',
+                    cursor: 'pointer', transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(91,155,255,0.4)'; e.currentTarget.style.color = 'var(--brand)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = cached ? 'var(--border)' : 'rgba(91,155,255,0.25)'; e.currentTarget.style.color = cached ? 'var(--text-2)' : 'var(--brand)' }}>
+                  <RefreshCw size={12} />
+                  Regenerate
+                </button>
+              )}
+            </div>
+          </div>
+        </ScrollFade>
+
+        {/* ── Hero card: ring + stats ── */}
+        {!loading && totalTips > 0 && (
+          <ScrollFade delay={30}>
+            <div className="card card-accent" style={{ padding: '20px 24px' }}>
+              <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
+
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  <ProgressRing done={doneCount} total={totalTips} />
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
+                    color: allDone ? '#10b981' : 'var(--text-3)', fontFamily: "'Manrope', sans-serif",
+                  }}>
+                    {allDone ? '🎉 Complete!' : `${doneCount} done`}
+                  </span>
+                </div>
+
+                <div style={{ width: 1, height: 80, background: 'var(--border)', flexShrink: 0 }} className="hidden sm:block" />
+
+                {ctx && (
+                  <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', flex: 1, alignItems: 'center' }}>
+                    {ctx.total > 0 && (
+                      <div>
+                        <p style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', marginBottom: 4, fontFamily: "'Manrope', sans-serif" }}>Spent This Week</p>
+                        <p style={{ fontSize: '1.375rem', fontWeight: 800, color: 'var(--text)', fontVariantNumeric: 'tabular-nums', fontFamily: "'Manrope', sans-serif" }}>
+                          ${fmt0(ctx.total)}
+                        </p>
+                      </div>
+                    )}
+                    {ctx.vs_avg_pct !== 0 && (
+                      <div>
+                        <p style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', marginBottom: 4, fontFamily: "'Manrope', sans-serif" }}>vs 4-Wk Avg</p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {ctx.vs_avg_pct > 0 ? <TrendingUp size={14} style={{ color: '#f87171' }} /> : <TrendingDown size={14} style={{ color: '#34d399' }} />}
+                          <p style={{ fontSize: '1.375rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontFamily: "'Manrope', sans-serif", color: ctx.vs_avg_pct > 0 ? '#f87171' : '#34d399' }}>
+                            {ctx.vs_avg_pct > 0 ? '+' : ''}{Number(ctx.vs_avg_pct).toFixed(0)}%
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {ctx.income > 0 && (
+                      <div>
+                        <p style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', marginBottom: 4, fontFamily: "'Manrope', sans-serif" }}>Income</p>
+                        <p style={{ fontSize: '1.375rem', fontWeight: 800, color: '#34d399', fontVariantNumeric: 'tabular-nums', fontFamily: "'Manrope', sans-serif" }}>
+                          ${fmt0(ctx.income)}
+                        </p>
+                      </div>
+                    )}
+                    {ctx.top_category && (
+                      <div>
+                        <p style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', marginBottom: 4, fontFamily: "'Manrope', sans-serif" }}>Top Category</p>
+                        <p style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text)' }}>{ctx.top_category}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {savingsEstimate > 0 && (
+                  <div style={{ marginLeft: 'auto', padding: '10px 14px', borderRadius: 10, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', flexShrink: 0, textAlign: 'center' }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#34d399', marginBottom: 2, fontFamily: "'Manrope', sans-serif" }}>Potential Save</p>
+                    <p style={{ fontSize: '1.125rem', fontWeight: 800, color: '#34d399', fontVariantNumeric: 'tabular-nums', fontFamily: "'Manrope', sans-serif" }}>~${fmt0(savingsEstimate)}</p>
+                    <p style={{ fontSize: 9, color: 'var(--text-3)', marginTop: 1 }}>cited in tips</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Progress bar */}
+              {totalTips > 0 && (
+                <div style={{ marginTop: 20 }}>
+                  <div style={{ height: 4, borderRadius: 999, background: 'var(--surface-3)', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 999, width: `${pctDone}%`,
+                      background: allDone ? 'linear-gradient(90deg, #10b981, #34d399)' : 'linear-gradient(90deg, var(--brand), #7eb8ff)',
+                      transition: 'width 0.8s cubic-bezier(0.34,1.56,0.64,1), background 0.4s',
+                    }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </ScrollFade>
+        )}
+
+        {/* ── Celebration banner ── */}
+        {showCelebration && (
+          <div className="celebrate-pop px-5 py-3.5 rounded-xl flex items-center gap-3"
+            style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)' }}>
+            <span style={{ fontSize: 22 }}>🎉</span>
+            <div>
+              <p className="text-sm font-bold" style={{ color: '#34d399' }}>Week complete!</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>You checked off all your tips — that's a streak worth celebrating.</p>
+            </div>
+            <button onClick={() => setCelebration(false)} className="ml-auto text-xs opacity-50 hover:opacity-100" style={{ color: 'var(--text-3)' }}>✕</button>
+          </div>
+        )}
+
+        {/* ── Recurring pattern warning ── */}
+        {recurringCats.length > 0 && !loading && (
+          <ScrollFade delay={40}>
+            <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
+              style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
+              <AlertTriangle size={14} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <p className="text-sm font-semibold" style={{ color: '#fbbf24' }}>Persistent pattern</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+                  <span className="font-medium" style={{ color: 'var(--text-2)' }}>{recurringCats.join(', ')}</span>{' '}
+                  tips have shown up for 2+ consecutive weeks — these habits may need real attention.
+                </p>
+              </div>
+            </div>
+          </ScrollFade>
+        )}
+
+        {/* ── Loader ── */}
+        {loading && <CoachLoader />}
+
+        {/* ── Category filter tabs ── */}
+        {!loading && totalTips > 0 && availableCats.length > 1 && (
+          <ScrollFade delay={50}>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button onClick={() => setFilter(null)}
+                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+                style={{
+                  background: activeFilter === null ? 'var(--brand)' : 'var(--surface-2)',
+                  color: activeFilter === null ? 'white' : 'var(--text-3)',
+                  border: `1px solid ${activeFilter === null ? 'var(--brand)' : 'var(--border)'}`,
+                  fontFamily: "'Manrope', sans-serif", letterSpacing: '0.04em',
+                }}>
+                All ({totalTips})
+              </button>
+              {availableCats.map(cat => {
+                const cfg = CAT_CONFIG[cat] || CAT_CONFIG.Tip
+                const isActive = activeFilter === cat
+                return (
+                  <button key={cat} onClick={() => setFilter(isActive ? null : cat)}
+                    className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+                    style={{
+                      background: isActive ? cfg.bg : 'var(--surface-2)',
+                      color: isActive ? cfg.color : 'var(--text-3)',
+                      border: `1px solid ${isActive ? cfg.border : 'var(--border)'}`,
+                      fontFamily: "'Manrope', sans-serif", letterSpacing: '0.04em',
+                    }}>
+                    {cat} ({catCounts[cat]})
+                  </button>
+                )
+              })}
+            </div>
+          </ScrollFade>
+        )}
+
+        {/* ── Tip cards ── */}
+        {!loading && filteredTips.length > 0 && (
+          <div className="space-y-3">
+            {filteredTips.map(({ tip, origIndex }) => (
+              <TipCard key={origIndex} tip={tip} index={origIndex}
+                done={done.has(origIndex)} onToggleDone={handleToggleDone} onCopy={handleCopy} />
+            ))}
+          </div>
+        )}
+
+        {!loading && tips.length > 0 && filteredTips.length === 0 && (
+          <div className="card text-center py-8">
+            <p className="text-sm" style={{ color: 'var(--text-3)' }}>No tips in this category this week.</p>
+          </div>
+        )}
+
+        {/* ── Archive ── */}
+        {!loading && (
+          <ScrollFade delay={80}>
+            <ArchiveSection archive={archive} />
+          </ScrollFade>
+        )}
+
+        {/* ── Empty state ── */}
+        {!loading && tips.length === 0 && (
+          <ScrollFade>
+            <div className="card text-center py-14">
+              <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+                style={{ background: 'var(--brand-light)', border: '1px solid rgba(91,155,255,0.2)' }}>
+                <Lightbulb size={26} style={{ color: 'var(--brand)' }} />
+              </div>
+              <p className="font-bold text-base mb-1" style={{ color: 'var(--text)' }}>No tips yet</p>
+              <p className="text-sm" style={{ color: 'var(--text-3)' }}>
+                Upload some transaction data to get your personalized weekly coaching brief
               </p>
             </div>
-          </div>
-        </ScrollFade>
-      )}
+          </ScrollFade>
+        )}
 
-      {/* ── Spending context ── */}
-      {context && !loading && (
-        <ScrollFade delay={40}>
-          <ContextCard ctx={context} />
-        </ScrollFade>
-      )}
-
-      {/* ── Loader ── */}
-      {loading && <AiLoader type="coach" title="Fiana · Weekly Coach" />}
-
-      {/* ── Savings estimate + progress bar ── */}
-      {!loading && totalTips > 0 && (
-        <ScrollFade delay={55}>
-          <div className="flex items-center gap-4 flex-wrap">
-            {savingsEstimate > 0 && (
-              <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
-                style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#34d399' }}>
-                <TrendingDown size={12} />
-                <span>Following all tips could save <strong>~${fmt0(savingsEstimate)}</strong> cited in advice</span>
-              </div>
-            )}
-            <div className="flex flex-1 items-center gap-3 min-w-[180px]">
-              <div className="flex-1 progress-track">
-                <div className="progress-fill"
-                  style={{
-                    width: `${totalTips > 0 ? (doneCount / totalTips) * 100 : 0}%`,
-                    background: doneCount === totalTips ? '#10b981' : 'var(--brand)',
-                  }} />
-              </div>
-              <span className="text-xs font-medium flex-shrink-0" style={{ color: 'var(--text-3)' }}>
-                {doneCount}/{totalTips} done
-              </span>
-            </div>
-          </div>
-        </ScrollFade>
-      )}
-
-      {/* ── All-done celebration banner ── */}
-      {showCelebration && (
-        <div className="px-4 py-3 rounded-xl text-sm font-semibold flex items-center gap-2"
-          style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#34d399' }}>
-          🎉 You completed all your tips this week — great work!
-          <button onClick={() => setCelebration(false)} className="ml-auto text-xs opacity-60 hover:opacity-100">✕</button>
-        </div>
-      )}
-
-      {/* ── Filter chips ── */}
-      {!loading && totalTips > 0 && (
-        <ScrollFade delay={60}>
-          <FilterChips active={activeFilter} onSelect={setFilter} tips={tips} />
-        </ScrollFade>
-      )}
-
-      {/* ── Tip cards — 2-column grid ── */}
-      {!loading && filteredTips.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {filteredTips.map(({ tip, origIndex }) => (
-            <ScrollFade key={origIndex} delay={origIndex * 60}>
-              <TipCard
-                tip={tip}
-                index={origIndex}
-                done={done.has(origIndex)}
-                onToggleDone={handleToggleDone}
-                onCopy={handleCopy}
-              />
-            </ScrollFade>
-          ))}
-        </div>
-      )}
-
-      {/* No tips match filter */}
-      {!loading && tips.length > 0 && filteredTips.length === 0 && (
-        <div className="card text-center py-8">
-          <p className="text-sm" style={{ color: 'var(--text-3)' }}>No tips in this category this week.</p>
-        </div>
-      )}
-
-      {/* ── Previous weeks archive ── */}
-      {!loading && (
-        <ScrollFade delay={80}>
-          <ArchiveSection archive={archive} />
-        </ScrollFade>
-      )}
-
-      {/* ── Empty state ── */}
-      {!loading && tips.length === 0 && (
-        <ScrollFade>
-          <div className="card text-center py-12">
-            <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center"
-              style={{ background: 'var(--brand-light)' }}>
-              <Lightbulb size={22} style={{ color: 'var(--brand)' }} />
-            </div>
-            <p className="font-semibold" style={{ color: 'var(--text)' }}>No tips yet</p>
-            <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>
-              Upload some transaction data to get personalized coaching
-            </p>
-          </div>
-        </ScrollFade>
-      )}
-    </div>
+      </div>
+    </>
   )
 }

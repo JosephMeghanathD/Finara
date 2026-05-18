@@ -21,6 +21,21 @@ public class AiController {
     private final CacheManager cacheManager;
 
     /**
+     * Fast financial summary for the story page — no AI call, pure DB.
+     * GET /api/ai/story/data?startMonth=2026-04&endMonth=2026-04
+     */
+    @GetMapping("/story/data")
+    public ResponseEntity<Map<String, Object>> getStoryData(
+            @RequestParam String startMonth,
+            @RequestParam(required = false) String endMonth,
+            HttpServletRequest request) {
+
+        Long userId = (Long) request.getAttribute("userId");
+        String end  = endMonth != null ? endMonth : startMonth;
+        return ResponseEntity.ok(aiService.getStoryData(userId, startMonth, end));
+    }
+
+    /**
      * UC8: Generate monthly financial story via Gemma.
      * POST /api/ai/story  { "month": "2025-07" }
      */
@@ -105,14 +120,20 @@ public class AiController {
 
     /**
      * UC14: Weekly spending habit coaching tips.
-     * GET /api/ai/coach?week=2025-W30
+     * GET /api/ai/coach?week=2025-W30&refresh=true
+     * refresh=true evicts the cache for this user+week before regenerating.
      */
     @GetMapping("/coach")
     public ResponseEntity<Map<String, Object>> coach(
             @RequestParam(required = false) String week,
+            @RequestParam(required = false) Boolean refresh,
             HttpServletRequest request) {
 
         Long userId = (Long) request.getAttribute("userId");
+        if (Boolean.TRUE.equals(refresh)) {
+            Cache cache = cacheManager.getCache("coach");
+            if (cache != null) cache.evict(userId + "_" + (week != null ? week : "current"));
+        }
         return ResponseEntity.ok(aiService.getWeeklyCoachTips(userId, week));
     }
 }

@@ -5,7 +5,7 @@ import { getISOWeek, getYear } from 'date-fns'
 import {
   LayoutDashboard, Upload, BookOpen, List, AlertTriangle,
   TrendingUp, Target, BarChart2, PiggyBank, MessageSquare,
-  Lightbulb, Sparkles,
+  Lightbulb, Sparkles, PieChart,
 } from 'lucide-react'
 import FianaLogo from './FinaraLogo'
 import TopBar from './TopBar'
@@ -33,8 +33,9 @@ const NAV_SECTIONS = [
       { to: '/transactions', icon: List,            label: 'Transactions',  color: '#94a3b8' },
       { to: '/anomalies',    icon: AlertTriangle,   label: 'Anomalies',     color: '#f97316' },
       { to: '/forecast',     icon: TrendingUp,      label: 'Forecast',      color: '#22d3ee' },
-      { to: '/budget',       icon: Target,          label: 'Budget',        color: '#a78bfa' },
-      { to: '/compare',      icon: BarChart2,       label: 'Compare',       color: '#ec4899' },
+      { to: '/budget',        icon: Target,         label: 'Budget',         color: '#a78bfa' },
+      { to: '/compare',       icon: BarChart2,      label: 'Compare',        color: '#ec4899' },
+      { to: '/insights',      icon: PieChart,       label: 'Spending Insights', color: '#f59e0b' },
     ]
   },
 ]
