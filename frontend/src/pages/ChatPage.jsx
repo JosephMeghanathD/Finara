@@ -234,6 +234,108 @@ function InlineTable({ chart }) {
   )
 }
 
+// ─── Month-over-years heatmap (2D grid: years × days) ────────────────────────
+
+function MonthHeatmap({ chart }) {
+  const [tooltip, setTooltip] = useState(null)
+  if (!chart?.data?.length || !chart?.years?.length) return null
+
+  const years = chart.years
+  const data  = chart.data  // [{day:1, "2023":X, "2024":Y}, ...]
+
+  let maxAmt = 0
+  for (const row of data) {
+    for (const yr of years) {
+      const v = row[yr] || 0
+      if (v > maxAmt) maxAmt = v
+    }
+  }
+
+  const getColor = (amount) => {
+    if (!amount) return 'rgba(91,155,255,0.07)'
+    const r = maxAmt > 0 ? amount / maxAmt : 0
+    if (r < 0.2) return 'rgba(91,155,255,0.18)'
+    if (r < 0.4) return 'rgba(91,155,255,0.38)'
+    if (r < 0.6) return 'rgba(91,155,255,0.58)'
+    if (r < 0.8) return '#5b9bff'
+    return 'rgba(220,235,255,0.95)'
+  }
+
+  const CELL = 14
+  const GAP  = 2
+
+  return (
+    <div className="mt-4 rounded-xl p-4"
+      style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-2)' }}>{chart.title}</p>
+
+      <div className="overflow-x-auto">
+        <div style={{ display: 'inline-block' }}>
+          {/* Day labels */}
+          <div style={{ display: 'flex', marginLeft: 36, marginBottom: 4, gap: GAP }}>
+            {data.map((row) => (
+              <div key={row.day} style={{
+                width: CELL, fontSize: 8, textAlign: 'center',
+                color: 'var(--text-3)', lineHeight: `${CELL}px`, flexShrink: 0,
+              }}>
+                {row.day === 1 || row.day % 5 === 0 ? row.day : ''}
+              </div>
+            ))}
+          </div>
+
+          {/* Year rows */}
+          {years.map((yr) => (
+            <div key={yr} style={{ display: 'flex', alignItems: 'center', gap: GAP, marginBottom: GAP }}>
+              <div style={{ width: 32, fontSize: 9, color: 'var(--text-3)', textAlign: 'right', paddingRight: 4, flexShrink: 0 }}>
+                {yr}
+              </div>
+              {data.map((row) => {
+                const amt = row[yr] || 0
+                return (
+                  <div key={row.day}
+                    style={{
+                      width: CELL, height: CELL, borderRadius: 3,
+                      background: getColor(amt),
+                      cursor: amt ? 'crosshair' : 'default',
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={amt ? (e) => {
+                      const r = e.currentTarget.getBoundingClientRect()
+                      setTooltip({ day: row.day, year: yr, amount: amt, x: r.left + r.width / 2, y: r.top - 6 })
+                    } : undefined}
+                    onMouseLeave={() => setTooltip(null)}
+                  />
+                )
+              })}
+            </div>
+          ))}
+
+          {/* Legend */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8, marginLeft: 36 }}>
+            <span style={{ fontSize: 9, color: 'var(--text-3)' }}>Less</span>
+            {['rgba(91,155,255,0.07)','rgba(91,155,255,0.18)','rgba(91,155,255,0.38)','rgba(91,155,255,0.58)','#5b9bff','rgba(220,235,255,0.95)'].map((bg, i) => (
+              <div key={i} style={{ width: CELL, height: CELL, borderRadius: 3, background: bg }} />
+            ))}
+            <span style={{ fontSize: 9, color: 'var(--text-3)' }}>More</span>
+          </div>
+        </div>
+      </div>
+
+      {tooltip && (
+        <div style={{
+          position: 'fixed', left: tooltip.x, top: tooltip.y,
+          transform: 'translateX(-50%) translateY(-100%)',
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 6, padding: '3px 8px', fontSize: 11, color: 'var(--text)',
+          pointerEvents: 'none', zIndex: 9999, whiteSpace: 'nowrap',
+        }}>
+          {tooltip.year} · Day {tooltip.day}: ${Number(tooltip.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Calendar heatmap ─────────────────────────────────────────────────────────
 
 function CalendarHeatmap({ chart }) {
@@ -366,8 +468,9 @@ function CalendarHeatmap({ chart }) {
 
 function renderChart(chart) {
   if (!chart) return null
-  if (chart.type === 'table')   return <InlineTable chart={chart} />
-  if (chart.type === 'heatmap') return <CalendarHeatmap chart={chart} />
+  if (chart.type === 'table')         return <InlineTable chart={chart} />
+  if (chart.type === 'heatmap')       return <CalendarHeatmap chart={chart} />
+  if (chart.type === 'month_heatmap') return <MonthHeatmap chart={chart} />
   if (!chart.data?.length)      return null
   return <InlineChart chart={chart} />
 }

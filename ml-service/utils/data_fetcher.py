@@ -129,10 +129,19 @@ def build_chart_from_fetched(fetched: dict, intent: dict) -> dict | None:
 
     if qtype == "daily_by_year":
         years = fetched.get("years", [])
+        exclude_days = set(intent.get("params", {}).get("exclude_days", []))
+        filtered = [row for row in data if row.get("day") not in exclude_days]
+        if chart_type == "month_heatmap":
+            return {
+                "type":  "month_heatmap",
+                "title": title,
+                "data":  filtered,
+                "years": years,
+            }
         return {
             "type":    "multi_line",
             "title":   title,
-            "data":    data,        # [{day:1, "2023":X, "2024":Y}, ...]
+            "data":    filtered,    # [{day:1, "2023":X, "2024":Y}, ...]
             "series":  years,       # ["2023", "2024", "2025"]
             "x_key":   "day",
         }

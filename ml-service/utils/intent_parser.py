@@ -69,6 +69,35 @@ _FETCH_SIGNALS = [
 
 _NULL_RESULT = {"needs_fetch": False, "type": None, "params": {}, "chart_type": None, "chart_title": ""}
 
+# Matches amounts like "$2000", "2k", "2.5k", "500"
+_AMT_RE = r'\$?(\d+(?:\.\d+)?)(k)?'
+
+def _parse_amount_bounds(msg: str) -> tuple:
+    """
+    Parse amount filter phrases. Returns (min_amount, max_amount) as floats or None.
+    Handles: "less than 2k", "under $500", "over $100", "between $50 and $200", etc.
+    """
+    def _amt(num: str, k: str) -> float:
+        v = float(num.replace(',', ''))
+        return v * 1000 if k else v
+
+    min_amt, max_amt = None, None
+
+    m = re.search(r'(?:less than|under|below|no more than|at most|not more than|smaller than)\s+' + _AMT_RE, msg)
+    if m:
+        max_amt = _amt(m.group(1), m.group(2))
+
+    m = re.search(r'(?:more than|over|above|at least|greater than|bigger than|exceeds?)\s+' + _AMT_RE, msg)
+    if m:
+        min_amt = _amt(m.group(1), m.group(2))
+
+    m = re.search(r'between\s+' + _AMT_RE + r'\s+and\s+' + _AMT_RE, msg)
+    if m:
+        min_amt = _amt(m.group(1), m.group(2))
+        max_amt = _amt(m.group(3), m.group(4))
+
+    return min_amt, max_amt
+
 # Month name → 2-digit number
 _MONTH_MAP = {
     "january": "01", "february": "02", "march": "03", "april": "04",
@@ -103,22 +132,47 @@ def _fast_yoy_override(message: str) -> dict | None:
     month_names_inv = {v: k.capitalize() for k, v in _MONTH_MAP.items()}
     month_name = month_names_inv[month_num]
 
-    _DAILY_SIGNALS = ["daily", "day by day", "each day", "every day", "per day"]
+    _DAILY_SIGNALS   = ["daily", "day by day", "each day", "every day", "per day"]
+    _HEATMAP_WORDS   = ["heatmap", "heat map", "heat-map"]
     if any(kw in msg for kw in _DAILY_SIGNALS):
-        # User wants day-of-month breakdown per year (multiple lines)
+        wants_heatmap = any(kw in msg for kw in _HEATMAP_WORDS)
+
+        # Parse "don't include day N", "exclude day N", "skip day N", "without day N"
+        # Two-step: first check if any exclusion signal exists (handles typos),
+        # then extract all "day N" numbers mentioned in the message.
+        _EXCL_SIGNALS = [
+            "don't include", "dont include", "don't inlcude", "dont inlcude",
+            "don't show", "dont show", "exclude", "skip", "without", "remove",
+            "except day", "not day", "no day",
+        ]
+        exclude_days = []
+        if any(sig in msg for sig in _EXCL_SIGNALS):
+            exclude_days = [int(m) for m in re.findall(r'\bday\s+(\d+)\b', msg)]
+
+        params: dict = {"month_num": month_num}
+        if exclude_days:
+            params["exclude_days"] = exclude_days
+        min_amt, max_amt = _parse_amount_bounds(msg)
+        if min_amt is not None: params["min_amount"] = min_amt
+        if max_amt is not None: params["max_amount"] = max_amt
+
         return {
             "needs_fetch": True,
             "type": "daily_by_year",
-            "params": {"month_num": month_num},
-            "chart_type": "multi_line",
+            "params": params,
+            "chart_type": "month_heatmap" if wants_heatmap else "multi_line",
             "chart_title": f"{month_name} Daily Spending — Year over Year",
         }
 
     # Plain annual totals
+    min_amt, max_amt = _parse_amount_bounds(msg)
+    yoy_params: dict = {"month_num": month_num}
+    if min_amt is not None: yoy_params["min_amount"] = min_amt
+    if max_amt is not None: yoy_params["max_amount"] = max_amt
     return {
         "needs_fetch": True,
         "type": "year_over_year",
-        "params": {"month_num": month_num},
+        "params": yoy_params,
         "chart_type": "line",
         "chart_title": f"{month_name} Spending — Year over Year",
     }
@@ -235,12 +289,15 @@ def parse_intent(message: str, available_months: list, context: dict) -> dict:
 
     try:
         result = ask_gemma_json(prompt, system=_SYSTEM, num_ctx=768, num_predict=220)
-        # Ensure all keys are present
         result.setdefault("needs_fetch", False)
         result.setdefault("type", None)
         result.setdefault("params", {})
         result.setdefault("chart_type", None)
         result.setdefault("chart_title", "")
+        # Augment with amount bounds regardless of query type
+        min_amt, max_amt = _parse_amount_bounds(message.lower())
+        if min_amt is not None: result["params"]["min_amount"] = min_amt
+        if max_amt is not None: result["params"]["max_amount"] = max_amt
         return result
     except Exception as exc:
         logger.warning("intent_parser failed (non-fatal): %s", exc)

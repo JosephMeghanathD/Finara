@@ -130,6 +130,10 @@ public class ServiceDataController {
                           "years", List.of(), "data", List.of());
         }
 
+        double minAmount = params.containsKey("min_amount") ? ((Number) params.get("min_amount")).doubleValue() : 0.0;
+        double maxAmount = params.containsKey("max_amount") ? ((Number) params.get("max_amount")).doubleValue() : 1_000_000_000.0;
+        boolean bounded  = params.containsKey("min_amount") || params.containsKey("max_amount");
+
         // Fetch daily rows per year
         List<String> years = new ArrayList<>();
         Map<String, Map<Integer, Double>> yearDayMap = new LinkedHashMap<>(); // year → {day → amount}
@@ -138,7 +142,9 @@ public class ServiceDataController {
             String year       = month.substring(0, 4);
             LocalDate start   = LocalDate.parse(month + "-01");
             LocalDate end     = start.plusMonths(1);
-            List<Object[]> rows = transactionRepository.getDailySpendingInRange(userId, start, end);
+            List<Object[]> rows = bounded
+                    ? transactionRepository.getDailySpendingInRangeBounded(userId, start, end, minAmount, maxAmount)
+                    : transactionRepository.getDailySpendingInRange(userId, start, end);
 
             Map<Integer, Double> dayAmounts = new LinkedHashMap<>();
             for (Object[] row : rows) {
@@ -224,12 +230,17 @@ public class ServiceDataController {
 
     private Map<String, Object> dailyTotals(Long userId, Map<String, Object> params) {
         String raw   = (String) params.getOrDefault("month", LocalDate.now().toString().substring(0, 7));
-        // Normalize: Gemma may return "06" or "2026-06" — always produce YYYY-MM
         String month = normalizeMonth(raw);
         LocalDate startDate = LocalDate.parse(month + "-01");
         LocalDate endDate   = startDate.plusMonths(1);
 
-        List<Object[]> rows = transactionRepository.getDailySpendingInRange(userId, startDate, endDate);
+        double minAmount = params.containsKey("min_amount") ? ((Number) params.get("min_amount")).doubleValue() : 0.0;
+        double maxAmount = params.containsKey("max_amount") ? ((Number) params.get("max_amount")).doubleValue() : 1_000_000_000.0;
+        boolean bounded  = params.containsKey("min_amount") || params.containsKey("max_amount");
+
+        List<Object[]> rows = bounded
+                ? transactionRepository.getDailySpendingInRangeBounded(userId, startDate, endDate, minAmount, maxAmount)
+                : transactionRepository.getDailySpendingInRange(userId, startDate, endDate);
         List<Map<String, Object>> data = rows.stream().map(r -> {
             Map<String, Object> e = new LinkedHashMap<>();
             e.put("date",   r[0].toString());
