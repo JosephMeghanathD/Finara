@@ -4,10 +4,12 @@ import com.finara.config.TimingContext;
 import com.finara.dto.ai.ChatRequest;
 import com.finara.dto.ai.SavingsGoalRequest;
 import com.finara.model.Budget;
+import com.finara.model.CoachTip;
 import com.finara.model.FinancialReport;
 import com.finara.model.Transaction;
 import com.finara.model.User;
 import com.finara.repository.BudgetRepository;
+import com.finara.repository.CoachTipRepository;
 import com.finara.repository.FinancialReportRepository;
 import com.finara.repository.TransactionRepository;
 import com.finara.repository.UserRepository;
@@ -17,6 +19,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.DayOfWeek;
@@ -35,6 +38,7 @@ public class AiService {
     private final UserRepository userRepository;
     private final FinancialReportRepository financialReportRepository;
     private final BudgetRepository budgetRepository;
+    private final CoachTipRepository coachTipRepository;
 
     @Qualifier("mlRestTemplate")
     private final RestTemplate mlRestTemplate;
@@ -402,6 +406,57 @@ public class AiService {
                 "top_category", topCategory
         ));
         return result;
+    }
+
+    // ─── Coach Tip Persistence ────────────────────────────────────────────────
+
+    public List<Map<String, Object>> getCoachTips(Long userId, String weekKey) {
+        return coachTipRepository.findByUserIdAndWeekKeyOrderByTipIndex(userId, weekKey)
+                .stream().map(this::tipToMap).collect(Collectors.toList());
+    }
+
+    @Transactional
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> saveCoachTips(Long userId, String weekKey, List<Map<String, Object>> tips) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        coachTipRepository.deleteByUserIdAndWeekKey(userId, weekKey);
+        List<CoachTip> entities = new ArrayList<>();
+        for (int i = 0; i < tips.size(); i++) {
+            Map<String, Object> t = tips.get(i);
+            entities.add(CoachTip.builder()
+                    .user(user)
+                    .weekKey(weekKey)
+                    .tipIndex(i)
+                    .tipText(t.getOrDefault("text", "").toString())
+                    .category(t.getOrDefault("category", "Tip").toString())
+                    .impact(t.getOrDefault("impact", "medium").toString())
+                    .howTo(t.getOrDefault("how_to", "").toString())
+                    .done(false)
+                    .build());
+        }
+        return coachTipRepository.saveAll(entities).stream().map(this::tipToMap).collect(Collectors.toList());
+    }
+
+    @Transactional
+    public Map<String, Object> toggleCoachTipDone(Long userId, Long tipId, boolean done) {
+        CoachTip tip = coachTipRepository.findById(tipId)
+                .orElseThrow(() -> new RuntimeException("Tip not found"));
+        if (!tip.getUser().getId().equals(userId)) throw new RuntimeException("Access denied");
+        tip.setDone(done);
+        return tipToMap(coachTipRepository.save(tip));
+    }
+
+    private Map<String, Object> tipToMap(CoachTip tip) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id",       tip.getId());
+        m.put("tipIndex", tip.getTipIndex());
+        m.put("text",     tip.getTipText());
+        m.put("category", tip.getCategory());
+        m.put("impact",   tip.getImpact());
+        m.put("how_to",   tip.getHowTo());
+        m.put("done",     tip.isDone());
+        return m;
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

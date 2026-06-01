@@ -10,6 +10,7 @@ import org.springframework.cache.CacheManager;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -135,5 +136,46 @@ public class AiController {
             if (cache != null) cache.evict(userId + "_" + (week != null ? week : "current"));
         }
         return ResponseEntity.ok(aiService.getWeeklyCoachTips(userId, week));
+    }
+
+    /**
+     * GET /api/ai/coach/tips?week=coach_2026_W22
+     * Returns persisted tips for the given week.
+     */
+    @GetMapping("/coach/tips")
+    public ResponseEntity<List<Map<String, Object>>> getCoachTips(
+            @RequestParam String week,
+            HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        return ResponseEntity.ok(aiService.getCoachTips(userId, week));
+    }
+
+    /**
+     * POST /api/ai/coach/tips  { "week": "coach_2026_W22", "tips": [...] }
+     * Saves (replaces) tips for the week. Returns tips with their DB ids.
+     */
+    @PostMapping("/coach/tips")
+    @SuppressWarnings("unchecked")
+    public ResponseEntity<List<Map<String, Object>>> saveCoachTips(
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        String week = (String) body.get("week");
+        List<Map<String, Object>> tips = (List<Map<String, Object>>) body.get("tips");
+        return ResponseEntity.ok(aiService.saveCoachTips(userId, week, tips));
+    }
+
+    /**
+     * PATCH /api/ai/coach/tip/{id}/done  { "done": true }
+     * Persists done state for a single tip.
+     */
+    @PatchMapping("/coach/tip/{id}/done")
+    public ResponseEntity<Map<String, Object>> toggleCoachTipDone(
+            @PathVariable Long id,
+            @RequestBody Map<String, Boolean> body,
+            HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("userId");
+        boolean done = Boolean.TRUE.equals(body.get("done"));
+        return ResponseEntity.ok(aiService.toggleCoachTipDone(userId, id, done));
     }
 }

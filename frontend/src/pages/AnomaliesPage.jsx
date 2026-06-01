@@ -221,8 +221,8 @@ function AnomalyCard({ txn, onDelete, onExplain, explaining, explanation }) {
         <div style={{ overflow: 'hidden', minHeight: 0 }}>
           <div style={{ borderTop: '1px solid var(--border)' }}>
             <div style={{
-              padding: '14px 16px 14px 36px',
-              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18,
+              padding: '14px 16px 14px 20px',
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 18,
             }}>
               {/* Left col: risk bar + finding + stats */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -424,7 +424,7 @@ export default function AnomaliesPage() {
       {/* ── Summary strip ── */}
       {!loading && anomalies.length > 0 && (
         <ScrollFade delay={40}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             {[
               { label: 'Flagged', value: anomalies.length, color: 'var(--brand)', sev: null },
               { label: 'High',   value: counts.high,    color: '#EF4444', sev: 'high'   },
@@ -459,7 +459,7 @@ export default function AnomaliesPage() {
 
       {/* ── Severity filter pills ── */}
       {!loading && anomalies.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           {(['all', 'high', 'medium', 'low']).map(s => {
             const active = sevFilter === s
             const c = s === 'all' ? 'var(--brand)' : SEV[s]?.color

@@ -5,7 +5,7 @@ import DateRangePicker from './DateRangePicker'
 import {
   LogOut, LayoutDashboard, Upload, BookOpen, MessageSquare,
   Lightbulb, PiggyBank, List, AlertTriangle, TrendingUp,
-  Target, BarChart2,
+  Target, BarChart2, Menu,
 } from 'lucide-react'
 
 const PAGE_META = {
@@ -26,7 +26,7 @@ const RANGE_PAGES = new Set([
   '/', '/story', '/transactions', '/anomalies', '/chat', '/savings', '/budget',
 ])
 
-export default function TopBar() {
+export default function TopBar({ onMenuOpen }) {
   const { user, logout }                        = useAuth()
   const { startDate, endDate, minDate, maxDate, setRange } = useTimeFilter()
   const navigate   = useNavigate()
@@ -43,28 +43,43 @@ export default function TopBar() {
   const firstName = user?.firstName ?? ''
 
   return (
-    <div className="flex items-center gap-4 px-7 flex-shrink-0"
+    <div
+      className="flex items-center flex-shrink-0"
       style={{
-        height: 56,
+        height: 56, minHeight: 56,
         background: 'var(--surface)',
         borderBottom: '1px solid rgba(255,255,255,0.055)',
-      }}>
+        padding: '0 12px',
+        gap: 8,
+      }}
+    >
+      {/* ── Hamburger (mobile only) ── */}
+      <button
+        onClick={onMenuOpen}
+        className="md:hidden flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+        style={{ color: 'var(--text-2)', border: '1px solid var(--border)' }}
+        aria-label="Open menu"
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-2)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+      >
+        <Menu size={16} />
+      </button>
 
-      {/* Page label with colored icon */}
-      <div className="flex items-center gap-2 flex-shrink-0" style={{ minWidth: 160 }}>
+      {/* ── Page label (hidden on very small screens) ── */}
+      <div className="hidden sm:flex items-center gap-2 flex-shrink-0" style={{ minWidth: 140 }}>
         {Icon && (
           <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ background: `${color}20` }}>
             <Icon size={14} style={{ color }} />
           </div>
         )}
-        <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+        <span className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
           {meta?.label ?? ''}
         </span>
       </div>
 
-      {/* Global time filter — centred */}
-      <div className="flex-1 flex justify-center">
+      {/* ── Global time filter — centred, collapses on mobile ── */}
+      <div className="flex-1 flex justify-center min-w-0 overflow-hidden">
         {showPicker && (
           <DateRangePicker
             startDate={startDate}
@@ -76,8 +91,8 @@ export default function TopBar() {
         )}
       </div>
 
-      {/* User + logout */}
-      <div className="flex items-center gap-2.5 flex-shrink-0">
+      {/* ── User + logout ── */}
+      <div className="flex items-center gap-2 flex-shrink-0">
         <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
           style={{
             background: 'linear-gradient(135deg, #4d8eff40, #8b5cf640)',
@@ -86,13 +101,13 @@ export default function TopBar() {
           }}>
           {initials}
         </div>
-        <span className="text-sm font-medium" style={{ color: 'var(--text-2)' }}>
+        <span className="text-sm font-medium hidden sm:block" style={{ color: 'var(--text-2)' }}>
           {firstName}
         </span>
         <button
           onClick={handleLogout}
           title="Logout"
-          className="p-1.5 rounded-lg transition-all ml-0.5"
+          className="p-1.5 rounded-lg transition-all"
           style={{ color: 'var(--text-3)' }}
           onMouseEnter={e => {
             e.currentTarget.style.background = 'rgba(239,68,68,0.1)'

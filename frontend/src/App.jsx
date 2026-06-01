@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { TimeFilterProvider } from './hooks/useTimeFilter'
+import { LoadingProvider } from './context/LoadingContext'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
@@ -24,7 +25,8 @@ function PrivateRoute({ children }) {
 
 export default function App() {
   return (
-    <AuthProvider>
+    <LoadingProvider>
+      <AuthProvider>
       <Routes>
         <Route path="/login"    element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
@@ -44,5 +46,6 @@ export default function App() {
         </Route>
       </Routes>
     </AuthProvider>
+    </LoadingProvider>
   )
 }

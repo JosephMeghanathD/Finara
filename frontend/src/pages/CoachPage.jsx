@@ -481,8 +481,24 @@ export default function CoachPage() {
   const fetchTips = async (forceRefresh = false) => {
     const key = weekKey()
 
-    // On page load (no forceRefresh): serve from localStorage if available
     if (!forceRefresh) {
+      // Try backend first
+      try {
+        const { data: saved } = await aiApi.coachTips(key)
+        if (saved && saved.length > 0) {
+          const tipsFromDb = saved.map(t => ({ id: t.id, text: t.text, category: t.category, impact: t.impact, how_to: t.how_to }))
+          const doneFromDb = new Set(saved.map((t, i) => t.done ? i : null).filter(i => i !== null))
+          setTips(tipsFromDb)
+          setDone(doneFromDb)
+          setCached(true)
+          setGeneratedAt(null)
+          saveToArchive(key, weekRangeLabel(), tipsFromDb, null)
+          setArchive(loadArchive())
+          return
+        }
+      } catch {}
+
+      // Fall back to localStorage cache
       const stored = localStorage.getItem(key)
       if (stored) {
         try {
@@ -498,7 +514,7 @@ export default function CoachPage() {
       }
     }
 
-    // Force regenerate: tell backend to evict cache + regenerate fresh tips
+    // Generate fresh tips from AI
     setLoading(true); setTips([]); setContext(null); setCached(false)
     celebratedRef.current = false
 
@@ -507,7 +523,17 @@ export default function CoachPage() {
       const t  = data.tips    || []
       const c  = data.context || null
       const ts = new Date().toISOString()
-      setTips(t); setContext(c); setGeneratedAt(ts); setCached(false)
+
+      // Persist to backend (replaces existing tips for this week)
+      try {
+        const { data: saved } = await aiApi.saveCoachTips(key, t)
+        const tipsWithIds = saved.map(bt => ({ id: bt.id, text: bt.text, category: bt.category, impact: bt.impact, how_to: bt.how_to }))
+        setTips(tipsWithIds)
+      } catch {
+        setTips(t)
+      }
+
+      setDone(new Set()); setContext(c); setGeneratedAt(ts); setCached(false)
       localStorage.setItem(key, JSON.stringify({ tips: t, context: c, generatedAt: ts }))
       saveToArchive(key, weekRangeLabel(), t, c)
       setArchive(loadArchive())
@@ -521,11 +547,16 @@ export default function CoachPage() {
   const handleToggleDone = useCallback((i) => {
     setDone(prev => {
       const next = new Set(prev)
-      next.has(i) ? next.delete(i) : next.add(i)
+      const nowDone = !prev.has(i)
+      nowDone ? next.add(i) : next.delete(i)
       saveDone(next)
       return next
     })
-  }, [])
+    const tip = tips[i]
+    if (tip?.id) {
+      aiApi.toggleCoachTip(tip.id, !done.has(i)).catch(() => {})
+    }
+  }, [tips, done])
 
   const handleCopy = useCallback((text) => {
     navigator.clipboard.writeText(text).then(() => toast.success('Tip copied!'))
