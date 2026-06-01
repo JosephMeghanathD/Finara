@@ -10,6 +10,7 @@ from flask import Blueprint, request, jsonify
 from utils.gemma_client import ask_gemma, ask_gemma_json, ask_gemma_chat
 from utils.intent_parser import parse_intent
 from utils.data_fetcher import fetch_data, summarise_for_prompt, build_chart_from_fetched
+from utils.stocks_client import has_stock_intent, build_stock_context_text
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,8 @@ def _extract_suggestions(reply: str, message: str, context: dict) -> list:
         (["entertainment", "streaming", "movie"], "Break down entertainment spending"),
         (["travel", "flight", "hotel", "vacation"], "Show my travel spending"),
         (["health", "medical", "pharmacy", "doctor"], "Analyze health spending"),
+        (["stock", "invest", "market", "ticker", "share"], "What stocks are my spending brands?"),
+        (["starbucks", "amazon", "apple", "netflix", "spotify"], "How much would I have if I invested there instead?"),
     ]
 
     seen = set()
@@ -340,6 +343,16 @@ def chat():
     # Inject fetched live data as a separate block so Gemma treats it as authoritative
     fetched_block = f"\n\n=== LIVE FETCHED DATA (use this for your answer) ===\n{fetched_text}\n=== END LIVE DATA ===" if fetched_text else ""
 
+    # Inject live stock/market data when the message is stock-related
+    stock_block = ""
+    if has_stock_intent(message):
+        try:
+            stock_text = build_stock_context_text(message)
+            if stock_text:
+                stock_block = f"\n\n=== LIVE STOCK DATA (real-time, use these exact numbers) ===\n{stock_text}\n=== END STOCK DATA ==="
+        except Exception as exc:
+            logger.warning("Stock data fetch failed (non-fatal): %s", exc)
+
     def _month_count(p):
         if p and ' to ' in p:
             a, b = p.split(' to ')
@@ -362,7 +375,7 @@ def chat():
         "role":    "system",
         "content": (NARRATOR_SYSTEM + period_instruction
                     + f"\n\nUser financial data ({period or 'selected period'}, {n_months} months total): "
-                    + ctx_text + history_block + fetched_block)
+                    + ctx_text + history_block + fetched_block + stock_block)
     }]
     for h in history[-6:]:
         messages.append({"role": h["role"], "content": h["content"]})

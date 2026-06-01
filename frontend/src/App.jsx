@@ -17,6 +17,7 @@ import SavingsPage from './pages/SavingsPage'
 import ChatPage from './pages/ChatPage'
 import CoachPage from './pages/CoachPage'
 import SpendingInsightsPage from './pages/SpendingInsightsPage'
+import StocksPage from './pages/StocksPage'
 
 function PrivateRoute({ children }) {
   const { user } = useAuth()
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="chat"          element={<ChatPage />} />
           <Route path="coach"         element={<CoachPage />} />
           <Route path="insights"      element={<SpendingInsightsPage />} />
+          <Route path="stocks"        element={<StocksPage />} />
         </Route>
       </Routes>
     </AuthProvider>

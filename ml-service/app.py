@@ -12,6 +12,7 @@ from routes.narrative import narrative_bp
 from routes.savings import savings_bp
 from routes.insights import insights_bp
 from routes.pdf import pdf_bp
+from routes.stocks import stocks_bp
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
@@ -26,6 +27,7 @@ app.register_blueprint(pdf_bp,        url_prefix="/api/ml")
 app.register_blueprint(narrative_bp,  url_prefix="/api/ai")
 app.register_blueprint(savings_bp,    url_prefix="/api/ai")
 app.register_blueprint(insights_bp,   url_prefix="/api/ai")
+app.register_blueprint(stocks_bp,     url_prefix="/api/stocks")
 
 @app.route("/health")
 def health():

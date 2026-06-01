@@ -64,6 +64,11 @@ const LOAD_MAP = [
   ['GET',  '/subscriptions/transactions',       'Loading subscription history…',       'data'],
   ['GET',  '/subscriptions',                    'Detecting subscriptions…',            'ml'],
   ['GET',  '/merchants',                        'Loading merchant data…',              'data'],
+  // Stocks
+  ['GET',  '/stocks/market',                    'Loading market data…',                'data'],
+  ['GET',  '/stocks/quote',                     'Fetching stock quotes…',              'data'],
+  ['POST', '/stocks/match-merchants',           'Matching your brands…',              'ml'],
+  ['POST', '/stocks/sector-etfs',               'Loading sector data…',               'ml'],
   // Health — skip (return null = no loader)
   ['GET',  '/health',                           null, null],
   ['GET',  '/api/health',                       null, null],
@@ -168,6 +173,14 @@ export const insightsApi = {
   subscriptions:            ()                     => api.get('/subscriptions'),
   subscriptionTransactions: name                    => api.get('/subscriptions/transactions', { params: { name } }),
   merchantLeaderboard:      (startMonth, endMonth) => api.get('/merchants/leaderboard', { params: { startMonth, endMonth } }),
+}
+
+// ─── Stocks ───────────────────────────────────────────────────────────────────
+export const stocksApi = {
+  market:         ()           => api.get('/stocks/market'),
+  quote:          symbols      => api.get('/stocks/quote', { params: { symbols } }),
+  matchMerchants: merchants    => api.post('/stocks/match-merchants', { merchants }),
+  sectorEtfs:     categories   => api.post('/stocks/sector-etfs', { categories }),
 }
 
 // ─── Health ───────────────────────────────────────────────────────────────────
