@@ -209,9 +209,9 @@ export default function StocksPage() {
     setLoadingMrch(true)
     try {
       const { data: lb } = await insightsApi.merchantLeaderboard(startMonth, endMonth)
-      const top = (lb.leaderboard || []).slice(0, 12).map(m => ({
-        name: m.merchant || m.description || '',
-        total_spent: m.total || m.total_spent || 0,
+      const top = (lb.merchants || []).slice(0, 12).map(m => ({
+        name: m.name || m.description || '',
+        total_spent: m.totalSpend || m.total_spent || 0,
       }))
       if (!top.length) { setMerchants([]); return }
       const { data } = await stocksApi.matchMerchants(top)
