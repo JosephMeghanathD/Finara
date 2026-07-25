@@ -31,30 +31,43 @@ app.register_blueprint(stocks_bp,     url_prefix="/api/stocks")
 
 @app.route("/health")
 def health():
+    """Report the ACTIVE LLM provider (google or ollama), not a hardcoded one."""
     import requests as req_lib
-    ollama_status = "down"
-    ollama_detail = None
-    try:
-        r = req_lib.get(OLLAMA_BASE_URL, timeout=8)
-        if r.status_code == 200:
-            ollama_status = "up"
-            # Also grab loaded model name if available
-            try:
-                tags = req_lib.get(OLLAMA_BASE_URL + "/api/tags", timeout=5)
-                models = [m["name"] for m in tags.json().get("models", [])]
-                ollama_detail = models[0] if models else "no model loaded"
-            except Exception:
-                ollama_detail = "running"
-        else:
-            ollama_detail = f"HTTP {r.status_code}"
-    except Exception as e:
-        ollama_detail = str(e)[:80]
+    provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
 
-    overall = "ok" if ollama_status == "up" else "degraded"
+    if provider == "google":
+        model   = os.getenv("GOOGLE_MODEL", "gemini-2.5-flash")
+        has_key = bool(os.getenv("GOOGLE_API_KEY"))
+        llm = {
+            "provider": "google",
+            "name":     "Google Gemini",
+            "status":   "up" if has_key else "down",
+            "detail":   model if has_key else "GOOGLE_API_KEY not set",
+        }
+    else:
+        model  = os.getenv("GEMMA_MODEL", "finara-gemma")
+        status, detail = "down", None
+        try:
+            r = req_lib.get(OLLAMA_BASE_URL, timeout=8)
+            if r.status_code == 200:
+                status = "up"
+                try:
+                    tags   = req_lib.get(OLLAMA_BASE_URL + "/api/tags", timeout=5)
+                    models = [m["name"] for m in tags.json().get("models", [])]
+                    detail = model if model in models else (models[0] if models else "no model loaded")
+                except Exception:
+                    detail = "running"
+            else:
+                detail = f"HTTP {r.status_code}"
+        except Exception as e:
+            detail = str(e)[:80]
+        llm = {"provider": "ollama", "name": "Ollama", "status": status, "detail": detail}
+
+    overall = "ok" if llm["status"] == "up" else "degraded"
     return jsonify({
-        "status": overall,
+        "status":  overall,
         "service": "finara-ml",
-        "ollama": {"status": ollama_status, "detail": ollama_detail},
+        "llm":     llm,
     })
 
 @app.errorhandler(Exception)

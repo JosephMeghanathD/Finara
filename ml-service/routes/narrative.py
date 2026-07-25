@@ -9,7 +9,7 @@ import time
 from flask import Blueprint, request, jsonify
 from utils.gemma_client import ask_gemma, ask_gemma_json, ask_gemma_chat
 from utils.intent_parser import parse_intent
-from utils.data_fetcher import fetch_data, summarise_for_prompt, build_chart_from_fetched
+from utils.data_fetcher import fetch_data, summarise_for_prompt, build_chart_from_fetched, apply_sort
 from utils.stocks_client import has_stock_intent, build_stock_context_text
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ narrative_bp = Blueprint("narrative", __name__)
 
 NARRATOR_SYSTEM = """You are Finara, a personal finance AI. Be concise, cite exact numbers, and always end with one actionable next step.
 
-When the user asks for a chart, graph, or visualization, describe the data in plain text — Finara will automatically render the chart in the UI. Never suggest external tools like Excel, Google Sheets, or online chart generators."""
+When the user asks for a chart, graph, or visualization, describe the data in plain text — Finara will automatically render the chart in the UI. Never say you are unable to create or render a chart, and never tell the user a chart type is inappropriate for the data — the app renders exactly what they ask for. Never suggest external tools like Excel, Google Sheets, or online chart generators."""
 
 _STORY_EXAMPLE = """
 EXAMPLE (do not copy these numbers — write the real story using the data below):
@@ -261,6 +261,67 @@ Reply JSON: {{"explanation": "one sentence what this charge is", "likely_categor
     return jsonify(result)
 
 
+# Range-based aggregates whose window can be clamped to the UI-selected time filter.
+_RANGE_TYPES = {"monthly_totals", "category_breakdown", "merchant_breakdown"}
+
+
+def _ym_add(ym: str, n: int) -> str:
+    """Add n months (may be negative) to a 'YYYY-MM' string."""
+    y, m = int(ym[:4]), int(ym[5:7])
+    idx = y * 12 + (m - 1) + n
+    return f"{idx // 12:04d}-{idx % 12 + 1:02d}"
+
+
+def _clamp_intent_to_ui(intent: dict, ui_start: str, ui_end: str) -> str:
+    """
+    Constrain a range-based query to the UI-selected time filter, which acts as a ceiling.
+    - No explicit period in the query  → default to the UI range.
+    - Requested period wider than UI    → clamp to UI and return a note to surface.
+    Mutates intent['params'] (sets start_month/end_month, drops count). Returns a note or "".
+    """
+    if not intent or intent.get("type") not in _RANGE_TYPES:
+        return ""
+    if not (ui_start and ui_end):
+        return ""
+    if ui_start > ui_end:
+        ui_start, ui_end = ui_end, ui_start
+
+    p = intent.setdefault("params", {})
+
+    req_start = req_end = None
+    if p.get("month"):
+        req_start = req_end = str(p["month"])[:7]
+    elif p.get("start_month") and p.get("end_month"):
+        req_start, req_end = p["start_month"], p["end_month"]
+    elif p.get("count"):
+        try:
+            n = max(1, int(p["count"]))
+        except (TypeError, ValueError):
+            n = 12
+        req_end = ui_end
+        req_start = _ym_add(ui_end, -(n - 1))
+
+    if req_start is None:
+        # No explicit period asked for → default to the selected UI range.
+        p["start_month"], p["end_month"] = ui_start, ui_end
+        p.pop("count", None)
+        return ""
+
+    eff_start = max(req_start, ui_start)
+    eff_end   = min(req_end, ui_end)
+    clamped   = req_start < ui_start or req_end > ui_end
+    p["start_month"], p["end_month"] = eff_start, eff_end
+    p.pop("count", None)
+
+    if clamped:
+        return (
+            f"NOTE: The user's selected time range is {ui_start} to {ui_end}. "
+            f"The requested period is wider than that, so the data below is limited to "
+            f"{eff_start}–{eff_end} (the selected range). Tell the user this in one short sentence."
+        )
+    return ""
+
+
 @narrative_bp.route("/chat", methods=["POST"])
 def chat():
     data    = request.get_json()
@@ -287,13 +348,22 @@ def chat():
         available_months = context.get("available_months", [])
         try:
             t1 = time.time()
-            intent    = parse_intent(message, available_months, context)
+            intent    = parse_intent(message, available_months, context, history=history)
             phase1_ms = round((time.time() - t1) * 1000)
             logger.info("intent: needs_fetch=%s type=%s (%dms)",
                         intent.get("needs_fetch"), intent.get("type"), phase1_ms)
         except Exception as exc:
             logger.warning("Phase 1 intent parse failed (non-fatal): %s", exc)
             intent = None
+
+        # Honor the UI-selected time range: default to it, clamp anything wider.
+        clamp_note = ""
+        if intent and intent.get("needs_fetch") and data.get("ui_range_set"):
+            try:
+                clamp_note = _clamp_intent_to_ui(
+                    intent, data.get("ui_start_month"), data.get("ui_end_month"))
+            except Exception as exc:
+                logger.warning("range clamp failed (non-fatal): %s", exc)
 
         # ── Phase 2: Live data fetch ───────────────────────────────────────────
         if intent and intent.get("needs_fetch") and intent.get("type"):
@@ -303,7 +373,10 @@ def chat():
                                        token=service_token)
                 phase2_ms = round((time.time() - t2) * 1000)
                 if fetched:
-                    fetched_text = summarise_for_prompt(fetched)
+                    apply_sort(fetched, intent)
+                    fetched_text = summarise_for_prompt(fetched, intent)
+                    if clamp_note:
+                        fetched_text = clamp_note + "\n" + fetched_text
                     logger.info("Phase 2 fetched %s in %dms, rows=%d",
                                 intent["type"], phase2_ms, len(fetched.get("data", [])))
             except Exception as exc:
@@ -371,10 +444,26 @@ def chat():
         f"Do NOT recalculate durations by dividing totals by a monthly rate."
     ) if period else ""
 
+    # When live data was fetched, it (not the loaded month) defines the time frame.
+    # Suppress the "selected period" pin and tell the model the chart is already drawn.
+    if fetched_text:
+        data_instruction = (
+            "\n\nA chart has ALREADY been generated from the LIVE FETCHED DATA below and is shown to the user. "
+            "Summarize those exact numbers in plain language. Do NOT say you cannot create or render a chart, "
+            "and do NOT critique or second-guess the chart type the user asked for. "
+            "Describe the time range and grouping exactly as reflected in the LIVE FETCHED DATA, "
+            "ignoring any other 'selected period' framing. "
+            "If the data begins with a NOTE about the time range being limited to the selected range, "
+            "mention that limitation to the user in one short sentence."
+        )
+        data_header = "\n\nUser financial data: "
+    else:
+        data_instruction = period_instruction
+        data_header = f"\n\nUser financial data ({period or 'selected period'}, {n_months} months total): "
+
     messages = [{
         "role":    "system",
-        "content": (NARRATOR_SYSTEM + period_instruction
-                    + f"\n\nUser financial data ({period or 'selected period'}, {n_months} months total): "
+        "content": (NARRATOR_SYSTEM + data_instruction + data_header
                     + ctx_text + history_block + fetched_block + stock_block)
     }]
     for h in history[-6:]:

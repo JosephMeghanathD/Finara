@@ -43,11 +43,12 @@ public class HealthController {
         }
         services.add(service("Database", dbStatus, dbDetail));
 
-        // ML Service + Ollama check
+        // ML Service + active LLM provider check (Google Gemini or Ollama)
         String mlStatus = "down";
         String mlDetail = null;
-        String ollamaStatus = "down";
-        String ollamaDetail = null;
+        String llmName   = "AI Model";
+        String llmStatus = "down";
+        String llmDetail = null;
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> mlResp = mlRestTemplate.getForObject("/health", Map.class);
@@ -57,18 +58,19 @@ public class HealthController {
                     mlDetail = "degraded";
                 }
                 @SuppressWarnings("unchecked")
-                Map<String, Object> ollama = (Map<String, Object>) mlResp.get("ollama");
-                if (ollama != null) {
-                    ollamaStatus = "up".equals(ollama.get("status")) ? "up" : "down";
-                    ollamaDetail = (String) ollama.get("detail");
+                Map<String, Object> llm = (Map<String, Object>) mlResp.get("llm");
+                if (llm != null) {
+                    llmName   = (String) llm.getOrDefault("name", "AI Model");
+                    llmStatus = "up".equals(llm.get("status")) ? "up" : "down";
+                    llmDetail = (String) llm.get("detail");
                 }
             }
         } catch (Exception e) {
             mlDetail = e.getMessage();
-            ollamaDetail = "ML service unreachable";
+            llmDetail = "ML service unreachable";
         }
         services.add(service("ML Service", mlStatus, mlDetail));
-        services.add(service("Ollama (Gemma)", ollamaStatus, ollamaDetail));
+        services.add(service(llmName, llmStatus, llmDetail));
 
         // Overall status
         boolean allUp = services.stream().allMatch(s -> "up".equals(s.get("status")));

@@ -215,4 +215,123 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
                                       @Param("keyword") String keyword,
                                       @Param("startMonth") String startMonth,
                                       @Param("endMonth") String endMonth);
+
+    // ── Filtered aggregates for the chat query planner ──────────────────────────
+    // Optional predicates use the (:x = '' OR …) pattern so a single query serves
+    // both the unfiltered and filtered cases. Amount bounds are always applied via
+    // sensible defaults (0 … 1e9) supplied by the caller.
+
+    // Returns: [YYYY-MM, total] — per-month spend totals with optional include/exclude filters.
+    @Query(value = """
+        SELECT TO_CHAR(transaction_date, 'YYYY-MM') AS ym, SUM(amount) AS total
+        FROM transactions
+        WHERE user_id = :userId
+          AND (transaction_type IS NULL OR transaction_type = 'DEBIT')
+          AND (category IS NULL OR category NOT IN ('Income','Transfer'))
+          AND (:category = '' OR category = :category)
+          AND (:merchant = '' OR LOWER(description) LIKE LOWER('%' || :merchant || '%'))
+          AND (:excludeMerchant = '' OR LOWER(description) NOT LIKE LOWER('%' || :excludeMerchant || '%'))
+          AND (:excludeCategory = '' OR category IS NULL OR LOWER(category) <> LOWER(:excludeCategory))
+          AND amount >= :minAmount AND amount <= :maxAmount
+          AND TO_CHAR(transaction_date, 'YYYY-MM') BETWEEN :startMonth AND :endMonth
+        GROUP BY ym ORDER BY ym
+        """, nativeQuery = true)
+    List<Object[]> getMonthlyTotalsFiltered(@Param("userId") Long userId,
+                                            @Param("startMonth") String startMonth,
+                                            @Param("endMonth") String endMonth,
+                                            @Param("category") String category,
+                                            @Param("merchant") String merchant,
+                                            @Param("excludeMerchant") String excludeMerchant,
+                                            @Param("excludeCategory") String excludeCategory,
+                                            @Param("minAmount") double minAmount,
+                                            @Param("maxAmount") double maxAmount);
+
+    // Returns: [category, total] — category breakdown over a range with optional filters.
+    @Query(value = """
+        SELECT category, SUM(amount) AS total
+        FROM transactions
+        WHERE user_id = :userId
+          AND (transaction_type IS NULL OR transaction_type = 'DEBIT')
+          AND (category IS NULL OR category NOT IN ('Income','Transfer'))
+          AND (:merchant = '' OR LOWER(description) LIKE LOWER('%' || :merchant || '%'))
+          AND (:excludeMerchant = '' OR LOWER(description) NOT LIKE LOWER('%' || :excludeMerchant || '%'))
+          AND (:excludeCategory = '' OR category IS NULL OR LOWER(category) <> LOWER(:excludeCategory))
+          AND amount >= :minAmount AND amount <= :maxAmount
+          AND TO_CHAR(transaction_date, 'YYYY-MM') BETWEEN :startMonth AND :endMonth
+        GROUP BY category ORDER BY SUM(amount) DESC
+        """, nativeQuery = true)
+    List<Object[]> getCategorySummaryForRangeFiltered(@Param("userId") Long userId,
+                                                      @Param("startMonth") String startMonth,
+                                                      @Param("endMonth") String endMonth,
+                                                      @Param("merchant") String merchant,
+                                                      @Param("excludeMerchant") String excludeMerchant,
+                                                      @Param("excludeCategory") String excludeCategory,
+                                                      @Param("minAmount") double minAmount,
+                                                      @Param("maxAmount") double maxAmount);
+
+    // Returns: [description, total] — merchant breakdown over a range with optional filters.
+    @Query(value = """
+        SELECT description, SUM(amount) AS total
+        FROM transactions
+        WHERE user_id = :userId
+          AND (transaction_type IS NULL OR transaction_type = 'DEBIT')
+          AND (category IS NULL OR category NOT IN ('Income','Transfer'))
+          AND (:category = '' OR category = :category)
+          AND (:excludeMerchant = '' OR LOWER(description) NOT LIKE LOWER('%' || :excludeMerchant || '%'))
+          AND (:excludeCategory = '' OR category IS NULL OR LOWER(category) <> LOWER(:excludeCategory))
+          AND amount >= :minAmount AND amount <= :maxAmount
+          AND TO_CHAR(transaction_date, 'YYYY-MM') BETWEEN :startMonth AND :endMonth
+        GROUP BY description ORDER BY SUM(amount) DESC
+        LIMIT 30
+        """, nativeQuery = true)
+    List<Object[]> getMerchantBreakdownFiltered(@Param("userId") Long userId,
+                                                @Param("startMonth") String startMonth,
+                                                @Param("endMonth") String endMonth,
+                                                @Param("category") String category,
+                                                @Param("excludeMerchant") String excludeMerchant,
+                                                @Param("excludeCategory") String excludeCategory,
+                                                @Param("minAmount") double minAmount,
+                                                @Param("maxAmount") double maxAmount);
+
+    // Returns: [YYYY-MM, category, total] — feeds category×month matrix charts
+    // (stacked bar/area, matrix heatmap).
+    @Query(value = """
+        SELECT TO_CHAR(transaction_date, 'YYYY-MM') AS ym, category, SUM(amount) AS total
+        FROM transactions
+        WHERE user_id = :userId
+          AND (transaction_type IS NULL OR transaction_type = 'DEBIT')
+          AND (category IS NULL OR category NOT IN ('Income','Transfer'))
+          AND (:excludeMerchant = '' OR LOWER(description) NOT LIKE LOWER('%' || :excludeMerchant || '%'))
+          AND (:excludeCategory = '' OR category IS NULL OR LOWER(category) <> LOWER(:excludeCategory))
+          AND amount >= :minAmount AND amount <= :maxAmount
+          AND TO_CHAR(transaction_date, 'YYYY-MM') BETWEEN :startMonth AND :endMonth
+        GROUP BY ym, category
+        ORDER BY ym
+        """, nativeQuery = true)
+    List<Object[]> getCategoryMonthMatrix(@Param("userId") Long userId,
+                                          @Param("startMonth") String startMonth,
+                                          @Param("endMonth") String endMonth,
+                                          @Param("excludeMerchant") String excludeMerchant,
+                                          @Param("excludeCategory") String excludeCategory,
+                                          @Param("minAmount") double minAmount,
+                                          @Param("maxAmount") double maxAmount);
+
+    // Returns: [transaction_date, amount, is_anomaly, category, description] — for scatter.
+    @Query(value = """
+        SELECT transaction_date, amount, is_anomaly, category, description
+        FROM transactions
+        WHERE user_id = :userId
+          AND (transaction_type IS NULL OR transaction_type = 'DEBIT')
+          AND (category IS NULL OR category NOT IN ('Income','Transfer'))
+          AND (:excludeMerchant = '' OR LOWER(description) NOT LIKE LOWER('%' || :excludeMerchant || '%'))
+          AND amount >= :minAmount AND amount <= :maxAmount
+          AND TO_CHAR(transaction_date, 'YYYY-MM') BETWEEN :startMonth AND :endMonth
+        ORDER BY transaction_date
+        """, nativeQuery = true)
+    List<Object[]> getTransactionPoints(@Param("userId") Long userId,
+                                        @Param("startMonth") String startMonth,
+                                        @Param("endMonth") String endMonth,
+                                        @Param("excludeMerchant") String excludeMerchant,
+                                        @Param("minAmount") double minAmount,
+                                        @Param("maxAmount") double maxAmount);
 }

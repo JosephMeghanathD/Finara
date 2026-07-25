@@ -58,6 +58,10 @@ public class ServiceDataController {
                 case "daily_by_year"       -> ResponseEntity.ok(dailyByYear(userId, params));
                 case "monthly_totals"      -> ResponseEntity.ok(monthlyTotals(userId, params));
                 case "category_breakdown"  -> ResponseEntity.ok(categoryBreakdown(userId, params));
+                case "merchant_breakdown"  -> ResponseEntity.ok(merchantBreakdown(userId, params));
+                case "category_month_matrix" -> ResponseEntity.ok(categoryMonthMatrix(userId, params));
+                case "money_flow"          -> ResponseEntity.ok(moneyFlow(userId, params));
+                case "transaction_points"  -> ResponseEntity.ok(transactionPoints(userId, params));
                 case "daily_totals"        -> ResponseEntity.ok(dailyTotals(userId, params));
                 case "available_months"    -> ResponseEntity.ok(availableMonths(userId));
                 case "transaction_search"  -> ResponseEntity.ok(transactionSearch(userId, params));
@@ -190,7 +194,28 @@ public class ServiceDataController {
         } else {
             months = allMonths.stream().limit(count).sorted().collect(Collectors.toList());
         }
+        if (months.isEmpty()) return Map.of("type", "monthly_totals", "data", List.of());
 
+        // Filtered path: one grouped query with predicates (no income series — a
+        // category/merchant/amount slice of income doesn't make sense).
+        if (hasFilters(params)) {
+            List<Object[]> rows = transactionRepository.getMonthlyTotalsFiltered(
+                    userId, months.get(0), months.get(months.size() - 1),
+                    strParam(params, "category"), merchantParam(params),
+                    strParam(params, "exclude_merchant"), strParam(params, "exclude_category"),
+                    minAmt(params), maxAmt(params));
+            List<Map<String, Object>> data = new ArrayList<>();
+            for (Object[] r : rows) {
+                Map<String, Object> e = new LinkedHashMap<>();
+                e.put("month", r[0]);
+                e.put("label", r[0]);
+                e.put("total", round2(((Number) r[1]).doubleValue()));
+                data.add(e);
+            }
+            return Map.of("type", "monthly_totals", "data", data);
+        }
+
+        // Unfiltered path: per-month totals plus the income series (for line charts).
         List<Map<String, Object>> data = new ArrayList<>();
         for (String m : months) {
             List<Object[]> rows = transactionRepository.getCategorySummaryForMonth(userId, m);
@@ -210,12 +235,16 @@ public class ServiceDataController {
     }
 
     private Map<String, Object> categoryBreakdown(Long userId, Map<String, Object> params) {
-        String rawMonth   = (String) params.get("month");
-        String month      = rawMonth != null ? normalizeMonth(rawMonth) : null;
-        String startMonth = month != null ? month : (String) params.getOrDefault("start_month", "2020-01");
-        String endMonth   = month != null ? month : (String) params.getOrDefault("end_month",   "2099-12");
+        String[] range = rangeFromParams(userId, params);
+        String startMonth = range[0], endMonth = range[1];
 
-        List<Object[]> rows = transactionRepository.getCategorySummaryForRange(userId, startMonth, endMonth);
+        List<Object[]> rows = hasFilters(params)
+                ? transactionRepository.getCategorySummaryForRangeFiltered(
+                        userId, startMonth, endMonth, merchantParam(params),
+                        strParam(params, "exclude_merchant"), strParam(params, "exclude_category"),
+                        minAmt(params), maxAmt(params))
+                : transactionRepository.getCategorySummaryForRange(userId, startMonth, endMonth);
+
         List<Map<String, Object>> data = new ArrayList<>();
         double total = 0;
         for (Object[] row : rows) {
@@ -226,6 +255,140 @@ public class ServiceDataController {
             data.add(Map.of("name", cat, "value", v));
         }
         return Map.of("type", "category_breakdown", "total", round2(total), "data", data);
+    }
+
+    private Map<String, Object> merchantBreakdown(Long userId, Map<String, Object> params) {
+        String[] range = rangeFromParams(userId, params);
+        List<Object[]> rows = transactionRepository.getMerchantBreakdownFiltered(
+                userId, range[0], range[1], strParam(params, "category"),
+                strParam(params, "exclude_merchant"), strParam(params, "exclude_category"),
+                minAmt(params), maxAmt(params));
+
+        List<Map<String, Object>> data = new ArrayList<>();
+        double total = 0;
+        for (Object[] row : rows) {
+            String name = row[0] != null ? (String) row[0] : "Unknown";
+            double v = round2(((Number) row[1]).doubleValue());
+            total += v;
+            data.add(Map.of("name", name, "value", v));
+        }
+        return Map.of("type", "merchant_breakdown", "total", round2(total), "data", data);
+    }
+
+    /** Category × month grid — feeds stacked bar/area and matrix heatmap. Top 8 categories, rest → "Other". */
+    private Map<String, Object> categoryMonthMatrix(Long userId, Map<String, Object> params) {
+        String[] range = rangeFromParams(userId, params);
+        List<Object[]> rows = transactionRepository.getCategoryMonthMatrix(
+                userId, range[0], range[1],
+                strParam(params, "exclude_merchant"), strParam(params, "exclude_category"),
+                minAmt(params), maxAmt(params));
+
+        Map<String, Double> catTotals = new HashMap<>();
+        Map<String, Map<String, Double>> byMonth = new LinkedHashMap<>();
+        Set<String> monthSet = new TreeSet<>();
+        for (Object[] r : rows) {
+            String ym  = (String) r[0];
+            String cat = r[1] != null ? (String) r[1] : "Other";
+            double v   = round2(((Number) r[2]).doubleValue());
+            monthSet.add(ym);
+            catTotals.merge(cat, v, Double::sum);
+            byMonth.computeIfAbsent(ym, k -> new HashMap<>()).merge(cat, v, Double::sum);
+        }
+
+        List<String> ranked = catTotals.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .map(Map.Entry::getKey).collect(Collectors.toList());
+        List<String> top = ranked.size() > 8 ? new ArrayList<>(ranked.subList(0, 8)) : new ArrayList<>(ranked);
+        boolean hasOther = ranked.size() > 8;
+        Set<String> topSet = new HashSet<>(top);
+
+        List<String> months = new ArrayList<>(monthSet);
+        List<Map<String, Object>> data = new ArrayList<>();
+        for (String m : months) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("month", m);
+            Map<String, Double> cm = byMonth.getOrDefault(m, Map.of());
+            double other = 0;
+            for (Map.Entry<String, Double> e : cm.entrySet()) {
+                if (topSet.contains(e.getKey())) row.put(e.getKey(), round2(e.getValue()));
+                else other += e.getValue();
+            }
+            for (String c : top) row.putIfAbsent(c, 0.0);
+            if (hasOther) row.put("Other", round2(other));
+            data.add(row);
+        }
+        List<String> categories = new ArrayList<>(top);
+        if (hasOther) categories.add("Other");
+        return Map.of("type", "category_month_matrix", "months", months, "categories", categories, "data", data);
+    }
+
+    /** Money flow: Income → top categories → top merchants. Returns Sankey nodes + links. */
+    private Map<String, Object> moneyFlow(Long userId, Map<String, Object> params) {
+        String[] range = rangeFromParams(userId, params);
+        Double income = transactionRepository.getCreditTotalForRange(userId, range[0], range[1]);
+        double incomeTotal = income != null ? round2(income) : 0.0;
+
+        List<Object[]> catRows = transactionRepository.getCategorySummaryForRange(userId, range[0], range[1]);
+        List<Map<String, Object>> cats = new ArrayList<>();
+        for (Object[] r : catRows) {
+            String c = r[0] != null ? (String) r[0] : "Other";
+            if (EXCL.contains(c)) continue;
+            cats.add(Map.of("name", c, "value", round2(((Number) r[1]).doubleValue())));
+        }
+        cats.sort((a, b) -> Double.compare((double) b.get("value"), (double) a.get("value")));
+        if (cats.size() > 8) cats = new ArrayList<>(cats.subList(0, 8));
+
+        // Nodes: Income(0), then categories, then top merchants per top category.
+        List<String> nodes = new ArrayList<>();
+        Map<String, Integer> idx = new LinkedHashMap<>();
+        java.util.function.Function<String, Integer> node = name -> {
+            if (!idx.containsKey(name)) { idx.put(name, nodes.size()); nodes.add(name); }
+            return idx.get(name);
+        };
+        node.apply("Income");
+        List<Map<String, Object>> links = new ArrayList<>();
+        int topCatsForMerchants = Math.min(4, cats.size());
+        for (int i = 0; i < cats.size(); i++) {
+            String cat = (String) cats.get(i).get("name");
+            double val = (double) cats.get(i).get("value");
+            links.add(Map.of("source", node.apply("Income"), "target", node.apply(cat), "value", val));
+            if (i < topCatsForMerchants) {
+                List<Object[]> mRows = transactionRepository.getMerchantBreakdownFiltered(
+                        userId, range[0], range[1], cat, "", "", 0.0, 1_000_000_000.0);
+                int shown = 0;
+                for (Object[] mr : mRows) {
+                    if (shown >= 3) break;
+                    String mName = mr[0] != null ? (String) mr[0] : "Other";
+                    double mVal = round2(((Number) mr[1]).doubleValue());
+                    if (mVal <= 0) continue;
+                    links.add(Map.of("source", node.apply(cat), "target", node.apply(mName + " "), "value", mVal));
+                    shown++;
+                }
+            }
+        }
+        List<Map<String, Object>> nodeObjs = nodes.stream()
+                .map(n -> Map.<String, Object>of("name", n.trim())).collect(Collectors.toList());
+        return Map.of("type", "money_flow", "income", incomeTotal, "nodes", nodeObjs, "links", links);
+    }
+
+    /** Individual transactions (date, amount, anomaly flag) for a scatter plot. */
+    private Map<String, Object> transactionPoints(Long userId, Map<String, Object> params) {
+        String[] range = rangeFromParams(userId, params);
+        List<Object[]> rows = transactionRepository.getTransactionPoints(
+                userId, range[0], range[1],
+                strParam(params, "exclude_merchant"), minAmt(params), maxAmt(params));
+        List<Map<String, Object>> data = new ArrayList<>();
+        for (Object[] r : rows) {
+            Map<String, Object> e = new LinkedHashMap<>();
+            e.put("date",     r[0].toString());
+            e.put("amount",   round2(((Number) r[1]).doubleValue()));
+            e.put("anomaly",  Boolean.TRUE.equals(r[2]));
+            e.put("category", r[3] != null ? (String) r[3] : "Other");
+            e.put("description", r[4]);
+            data.add(e);
+            if (data.size() >= 500) break;
+        }
+        return Map.of("type", "transaction_points", "data", data);
     }
 
     private Map<String, Object> dailyTotals(Long userId, Map<String, Object> params) {
@@ -300,6 +463,55 @@ public class ServiceDataController {
         List<String> months = transactionRepository.findDistinctMonthsByUserId(userId)
                 .stream().sorted().collect(Collectors.toList());
         return Map.of("type", "available_months", "months", months);
+    }
+
+    // ── Filter helpers for the chat query planner ───────────────────────────────
+
+    private static String strParam(Map<String, Object> p, String key) {
+        Object v = p.get(key);
+        return v == null ? "" : v.toString().trim();
+    }
+
+    /** Merchant filter may arrive as "merchant" or "keyword". */
+    private static String merchantParam(Map<String, Object> p) {
+        String m = strParam(p, "merchant");
+        return !m.isEmpty() ? m : strParam(p, "keyword");
+    }
+
+    private static double minAmt(Map<String, Object> p) {
+        return p.containsKey("min_amount") ? ((Number) p.get("min_amount")).doubleValue() : 0.0;
+    }
+
+    private static double maxAmt(Map<String, Object> p) {
+        return p.containsKey("max_amount") ? ((Number) p.get("max_amount")).doubleValue() : 1_000_000_000.0;
+    }
+
+    private static boolean hasFilters(Map<String, Object> p) {
+        return !strParam(p, "category").isEmpty()
+                || !merchantParam(p).isEmpty()
+                || !strParam(p, "exclude_merchant").isEmpty()
+                || !strParam(p, "exclude_category").isEmpty()
+                || p.containsKey("min_amount")
+                || p.containsKey("max_amount");
+    }
+
+    /** Resolve a [startMonth, endMonth] range from month / start_month+end_month / count / all-time. */
+    private String[] rangeFromParams(Long userId, Map<String, Object> params) {
+        String rawMonth = (String) params.get("month");
+        if (rawMonth != null) {
+            String m = normalizeMonth(rawMonth);
+            return new String[]{m, m};
+        }
+        String sm = (String) params.get("start_month");
+        String em = (String) params.get("end_month");
+        if (sm != null && em != null) return new String[]{sm, em};
+        if (params.containsKey("count")) {
+            int count = ((Number) params.get("count")).intValue();
+            List<String> months = transactionRepository.findDistinctMonthsByUserId(userId)
+                    .stream().limit(count).sorted().collect(Collectors.toList());
+            if (!months.isEmpty()) return new String[]{months.get(0), months.get(months.size() - 1)};
+        }
+        return new String[]{"2020-01", "2099-12"};
     }
 
     private static double round2(double v) {

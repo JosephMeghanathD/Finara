@@ -8,7 +8,11 @@ import { format, parseISO } from 'date-fns'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  LineChart, Line,
+  LineChart, Line, ComposedChart, Area,
+  Treemap, Sankey, Layer, Rectangle,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  ScatterChart, Scatter, ZAxis,
+  RadialBarChart, RadialBar,
 } from 'recharts'
 
 const CAT_COLORS = {
@@ -464,6 +468,256 @@ function CalendarHeatmap({ chart }) {
   )
 }
 
+// ─── Shared helpers for the extended chart library ────────────────────────────
+
+const colorFor = (name, i) => CAT_COLORS[name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]
+const fmtMonthShort = m => { try { return format(parseISO(m + '-01'), 'MMM yy') } catch { return m } }
+
+function ChartCard({ title, children }) {
+  return (
+    <div className="mt-4 rounded-xl overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+      {title && <p className="text-xs font-semibold px-4 pt-3 pb-1" style={{ color: 'var(--text-2)' }}>{title}</p>}
+      <div className="px-2 pb-3">{children}</div>
+    </div>
+  )
+}
+
+function StackedBar({ chart }) {
+  const cats = chart.categories || []
+  if (!chart.data?.length || !cats.length) return null
+  return (
+    <ChartCard title={chart.title}>
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart data={chart.data} margin={{ left: 8, right: 16, top: 8, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="month" tickFormatter={fmtMonthShort} tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} />
+          <YAxis tickFormatter={v => '$' + Math.round(v / 1000) + 'k'} tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} width={44} />
+          <Tooltip {...TOOLTIP_STYLE} formatter={v => fmt$(v)} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {cats.map((c, i) => <Bar key={c} dataKey={c} stackId="a" fill={colorFor(c, i)} maxBarSize={44} />)}
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  )
+}
+
+function StackedArea({ chart }) {
+  const cats = chart.categories || []
+  if (!chart.data?.length || !cats.length) return null
+  return (
+    <ChartCard title={chart.title}>
+      <ResponsiveContainer width="100%" height={280}>
+        <ComposedChart data={chart.data} margin={{ left: 8, right: 16, top: 8, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="month" tickFormatter={fmtMonthShort} tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} />
+          <YAxis tickFormatter={v => '$' + Math.round(v / 1000) + 'k'} tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} width={44} />
+          <Tooltip {...TOOLTIP_STYLE} formatter={v => fmt$(v)} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {cats.map((c, i) => <Area key={c} type="monotone" dataKey={c} stackId="a" stroke={colorFor(c, i)} fill={colorFor(c, i)} fillOpacity={0.5} />)}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  )
+}
+
+function MatrixHeatmap({ chart }) {
+  const [tip, setTip] = useState(null)
+  const cats = chart.categories || []
+  const months = chart.months || []
+  if (!chart.data?.length || !cats.length) return null
+
+  const byMonth = {}
+  let max = 0
+  for (const row of chart.data) {
+    byMonth[row.month] = row
+    for (const c of cats) { const v = row[c] || 0; if (v > max) max = v }
+  }
+  const color = v => {
+    if (!v) return 'rgba(91,155,255,0.06)'
+    const r = max > 0 ? v / max : 0
+    if (r < 0.2) return 'rgba(91,155,255,0.20)'
+    if (r < 0.4) return 'rgba(91,155,255,0.40)'
+    if (r < 0.6) return 'rgba(91,155,255,0.60)'
+    if (r < 0.8) return '#5b9bff'
+    return 'rgba(220,235,255,0.95)'
+  }
+  const CELL = 26
+  return (
+    <ChartCard title={chart.title}>
+      <div className="overflow-x-auto px-2 pb-2">
+        <div style={{ display: 'inline-block' }}>
+          <div style={{ display: 'flex', marginLeft: 96, gap: 3, marginBottom: 3 }}>
+            {months.map(m => (
+              <div key={m} style={{ width: CELL, fontSize: 8, textAlign: 'center', color: 'var(--text-3)', flexShrink: 0 }}>{fmtMonthShort(m).split(' ')[0]}</div>
+            ))}
+          </div>
+          {cats.map(c => (
+            <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 3 }}>
+              <div style={{ width: 92, fontSize: 10, color: 'var(--text-2)', textAlign: 'right', paddingRight: 4, flexShrink: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c}</div>
+              {months.map(m => {
+                const v = (byMonth[m] || {})[c] || 0
+                return <div key={m} style={{ width: CELL, height: CELL, borderRadius: 4, background: color(v), flexShrink: 0, cursor: v ? 'crosshair' : 'default' }}
+                  onMouseEnter={v ? e => { const r = e.currentTarget.getBoundingClientRect(); setTip({ c, m, v, x: r.left + r.width / 2, y: r.top - 6 }) } : undefined}
+                  onMouseLeave={() => setTip(null)} />
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+      {tip && (
+        <div style={{ position: 'fixed', left: tip.x, top: tip.y, transform: 'translateX(-50%) translateY(-100%)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: 'var(--text)', pointerEvents: 'none', zIndex: 9999, whiteSpace: 'nowrap' }}>
+          {tip.c} · {fmtMonthShort(tip.m)}: {fmt$(tip.v)}
+        </div>
+      )}
+    </ChartCard>
+  )
+}
+
+function TreemapContent({ x, y, width, height, name, value, index }) {
+  if (width < 4 || height < 4) return null
+  const fill = colorFor(name, index || 0)
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height} rx={3} style={{ fill, stroke: 'var(--surface)', strokeWidth: 2 }} />
+      {width > 54 && height > 22 && (
+        <text x={x + 6} y={y + 16} fill="#fff" fontSize={11} fontWeight={600}>{name}</text>
+      )}
+      {width > 54 && height > 36 && (
+        <text x={x + 6} y={y + 30} fill="rgba(255,255,255,0.85)" fontSize={10}>{fmt$(value)}</text>
+      )}
+    </g>
+  )
+}
+
+function TreemapChart({ chart }) {
+  if (!chart.data?.length) return null
+  return (
+    <ChartCard title={chart.title}>
+      <ResponsiveContainer width="100%" height={260}>
+        <Treemap data={chart.data} dataKey="value" nameKey="name" aspectRatio={4 / 3} content={<TreemapContent />} isAnimationActive={false}>
+          <Tooltip {...TOOLTIP_STYLE} formatter={v => fmt$(v)} />
+        </Treemap>
+      </ResponsiveContainer>
+    </ChartCard>
+  )
+}
+
+function SankeyNode({ x, y, width, height, index, payload }) {
+  const isOut = x > 200
+  return (
+    <Layer>
+      <Rectangle x={x} y={y} width={width} height={height} fill="#6366F1" fillOpacity={0.9} radius={2} />
+      <text x={isOut ? x - 6 : x + width + 6} y={y + height / 2} textAnchor={isOut ? 'end' : 'start'} dominantBaseline="middle" fontSize={10} fill="var(--text-2)">
+        {payload.name}
+      </text>
+    </Layer>
+  )
+}
+
+function SankeyChart({ chart }) {
+  if (!chart.links?.length || !chart.nodes?.length) return null
+  return (
+    <ChartCard title={chart.title}>
+      <ResponsiveContainer width="100%" height={Math.max(260, chart.nodes.length * 22)}>
+        <Sankey data={{ nodes: chart.nodes, links: chart.links }} nodePadding={16} nodeWidth={10}
+          link={{ stroke: '#5b9bff', strokeOpacity: 0.25 }} node={<SankeyNode />}
+          margin={{ left: 8, right: 140, top: 8, bottom: 8 }}>
+          <Tooltip {...TOOLTIP_STYLE} formatter={v => fmt$(v)} />
+        </Sankey>
+      </ResponsiveContainer>
+    </ChartCard>
+  )
+}
+
+function Waterfall({ chart }) {
+  if (!chart.data?.length) return null
+  let cum = 0
+  const bars = chart.data.map(d => {
+    if (d.kind === 'total') { cum = d.value; return { name: d.name, base: 0, delta: d.value, color: '#6366F1' } }
+    if (d.kind === 'net')   { return { name: d.name, base: 0, delta: d.value, color: d.value >= 0 ? '#10B981' : '#EF4444' } }
+    const amt = -d.value; const bottom = cum - amt; cum = bottom
+    return { name: d.name, base: bottom, delta: amt, color: '#F59E0B' }
+  })
+  return (
+    <ChartCard title={chart.title}>
+      <ResponsiveContainer width="100%" height={280}>
+        <ComposedChart data={bars} margin={{ left: 8, right: 16, top: 8, bottom: 40 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="name" tick={{ fontSize: 9, fill: 'var(--text-3)' }} angle={-30} textAnchor="end" interval={0} height={50} axisLine={false} tickLine={false} />
+          <YAxis tickFormatter={v => '$' + Math.round(v / 1000) + 'k'} tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} width={44} />
+          <Tooltip {...TOOLTIP_STYLE} formatter={(v, n) => n === 'delta' ? fmt$(v) : null} />
+          <Bar dataKey="base" stackId="w" fill="transparent" />
+          <Bar dataKey="delta" stackId="w" maxBarSize={44}>
+            {bars.map((b, i) => <Cell key={i} fill={b.color} />)}
+          </Bar>
+        </ComposedChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  )
+}
+
+function RadarProfile({ chart }) {
+  if (!chart.data?.length) return null
+  return (
+    <ChartCard title={chart.title}>
+      <ResponsiveContainer width="100%" height={280}>
+        <RadarChart data={chart.data} outerRadius="72%">
+          <PolarGrid stroke="var(--border)" />
+          <PolarAngleAxis dataKey="category" tick={{ fontSize: 10, fill: 'var(--text-3)' }} />
+          <PolarRadiusAxis tick={{ fontSize: 9, fill: 'var(--text-3)' }} tickFormatter={v => '$' + Math.round(v / 1000) + 'k'} />
+          <Radar dataKey="amount" stroke="#6366F1" fill="#6366F1" fillOpacity={0.4} />
+          <Tooltip {...TOOLTIP_STYLE} formatter={v => fmt$(v)} />
+        </RadarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  )
+}
+
+function ScatterTxns({ chart }) {
+  if (!chart.data?.length) return null
+  const pts = chart.data.map(d => ({ ...d, t: (() => { try { return parseISO(d.date).getTime() } catch { return 0 } })() }))
+  const normal = pts.filter(p => !p.anomaly)
+  const anomalies = pts.filter(p => p.anomaly)
+  return (
+    <ChartCard title={chart.title}>
+      <ResponsiveContainer width="100%" height={260}>
+        <ScatterChart margin={{ left: 8, right: 16, top: 8, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+          <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={t => { try { return format(new Date(t), 'MMM yy') } catch { return '' } }} tick={{ fontSize: 10, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} />
+          <YAxis dataKey="amount" tickFormatter={v => '$' + Math.round(v / 1000) + 'k'} tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} width={44} />
+          <ZAxis range={[36, 36]} />
+          <Tooltip {...TOOLTIP_STYLE} formatter={(v, n) => n === 'amount' ? fmt$(v) : null} labelFormatter={() => ''} />
+          <Scatter data={normal} fill="#6366F1" fillOpacity={0.6} />
+          <Scatter data={anomalies} fill="#EF4444" />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  )
+}
+
+function Gauge({ chart }) {
+  const value = chart.value || 0
+  const max = chart.max || 1
+  const pct = Math.min(100, Math.round((value / max) * 100))
+  const color = pct < 70 ? '#10B981' : pct < 100 ? '#F59E0B' : '#EF4444'
+  return (
+    <ChartCard title={chart.title}>
+      <div style={{ position: 'relative' }}>
+        <ResponsiveContainer width="100%" height={180}>
+          <RadialBarChart innerRadius="70%" outerRadius="100%" startAngle={180} endAngle={0} data={[{ value: pct, fill: color }]}>
+            <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+            <RadialBar dataKey="value" cornerRadius={10} background={{ fill: 'var(--border)' }} />
+          </RadialBarChart>
+        </ResponsiveContainer>
+        <div style={{ position: 'absolute', inset: 0, top: '38%', textAlign: 'center' }}>
+          <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)' }}>{pct}%</div>
+          <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{chart.label || ''}</div>
+        </div>
+      </div>
+    </ChartCard>
+  )
+}
+
 // ─── Chart dispatcher ─────────────────────────────────────────────────────────
 
 function renderChart(chart) {
@@ -471,6 +725,15 @@ function renderChart(chart) {
   if (chart.type === 'table')         return <InlineTable chart={chart} />
   if (chart.type === 'heatmap')       return <CalendarHeatmap chart={chart} />
   if (chart.type === 'month_heatmap') return <MonthHeatmap chart={chart} />
+  if (chart.type === 'matrix_heatmap') return <MatrixHeatmap chart={chart} />
+  if (chart.type === 'stacked_bar')   return <StackedBar chart={chart} />
+  if (chart.type === 'stacked_area')  return <StackedArea chart={chart} />
+  if (chart.type === 'treemap')       return <TreemapChart chart={chart} />
+  if (chart.type === 'sankey')        return <SankeyChart chart={chart} />
+  if (chart.type === 'waterfall')     return <Waterfall chart={chart} />
+  if (chart.type === 'radar')         return <RadarProfile chart={chart} />
+  if (chart.type === 'scatter')       return <ScatterTxns chart={chart} />
+  if (chart.type === 'gauge')         return <Gauge chart={chart} />
   if (!chart.data?.length)      return null
   return <InlineChart chart={chart} />
 }

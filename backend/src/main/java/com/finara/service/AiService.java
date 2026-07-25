@@ -267,6 +267,11 @@ public class AiService {
         // Allow ml-service to call back for live data fetching
         body.put("user_id",         userId);
         body.put("service_token",   serviceToken);
+        // UI-selected time range (the ceiling for live queries). ui_range_set is false
+        // when no filter was chosen — then ml-service treats it as all-time.
+        body.put("ui_start_month",  startMonth);
+        body.put("ui_end_month",    endMonth);
+        body.put("ui_range_set",    req.getStartMonth() != null || req.getMonth() != null);
 
         long mlStart = System.currentTimeMillis();
         Map resp = mlRestTemplate.postForObject("/api/ai/chat", body, Map.class);
