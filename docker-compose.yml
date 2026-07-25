@@ -19,6 +19,42 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── 1b. Ollama (local model) ─────────────────────────────────────────────────
+  # Only starts with the "local" profile: `docker compose --profile local up`.
+  # Skip the profile entirely when using LLM_PROVIDER=google.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: finara-ollama
+    profiles: ["local"]
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # One-shot: pull base Gemma and build the custom finara-gemma model, then exit.
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: finara-ollama-init
+    profiles: ["local"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ./ml-service/Modelfile:/Modelfile:ro
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "ollama pull gemma3:4b && ollama create finara-gemma -f /Modelfile && echo 'finara-gemma ready'"
+    restart: "no"
+
   # ── 2. ML / AI Service (Python + Flask) ─────────────────────────────────────
   ml-service:
     build:
@@ -29,10 +65,22 @@ services:
     ports:
       - "8000:8000"
     environment:
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-      GEMMA_MODEL: finara-gemma
+      # Provider switch: "ollama" (local, default) or "google" (Gemini API).
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      # Local model (used when LLM_PROVIDER=ollama)
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      GEMMA_MODEL: ${GEMMA_MODEL:-finara-gemma}
+      # Google Gemini (used when LLM_PROVIDER=google)
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GOOGLE_MODEL: ${GOOGLE_MODEL:-gemini-2.5-flash}
       SERVICE_TOKEN: finara_internal_svc_token_2026
       BACKEND_INTERNAL_URL: http://backend:8080
+    depends_on:
+      # Waits for the model build only when the local profile is active;
+      # ignored (not pulled in) in google mode.
+      ollama-init:
+        condition: service_completed_successfully
+        required: false
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 15s
@@ -86,3 +134,4 @@ services:
 
 volumes:
   pgdata:
+  ollama_data:

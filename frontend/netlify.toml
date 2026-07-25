@@ -1,0 +1,23 @@
+# Netlify config for the Finara frontend.
+# The site auto-deploys on push to GitHub. This file wires the SPA + the API proxy.
+#
+# IMPORTANT: replace VM_EXTERNAL_IP below with the GCE VM's external IP once it's up.
+# The /api/* rewrite is a SERVER-SIDE proxy (status 200), so the browser only ever
+# talks to Netlify over HTTPS — no CORS and no mixed-content even though the VM is HTTP.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Proxy all API calls to the backend on the GCE VM.
+[[redirects]]
+  from = "/api/*"
+  to = "http://VM_EXTERNAL_IP:8080/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback: let React Router handle deep links.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
