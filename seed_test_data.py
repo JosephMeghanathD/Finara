@@ -22,6 +22,7 @@ Run while Docker Compose is up:
     python3 seed_test_data.py
 """
 
+import os
 import random
 import uuid
 from datetime import date, timedelta
@@ -285,7 +286,10 @@ def paycheck_amount(pay_date):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    conn = psycopg2.connect(**DB)
+    # DATABASE_URL (e.g. the Neon connection string) takes precedence; libpq
+    # parses sslmode / channel_binding directly. Falls back to the local DB dict.
+    db_url = os.getenv("DATABASE_URL")
+    conn = psycopg2.connect(db_url) if db_url else psycopg2.connect(**DB)
     cur  = conn.cursor()
 
     # ── 1. Upsert user ─────────────────────────────────────────────────────

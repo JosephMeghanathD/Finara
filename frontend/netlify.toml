@@ -12,7 +12,7 @@
 # Proxy all API calls to the backend on the GCE VM.
 [[redirects]]
   from = "/api/*"
-  to = "http://VM_EXTERNAL_IP:8080/api/:splat"
+  to = "http://34.138.231.191:8080/api/:splat"
   status = 200
   force = true
 

@@ -129,6 +129,12 @@ def _google_complete(messages, temperature, num_ctx, num_predict, as_json) -> st
         "maxOutputTokens": num_predict,
         "topP":            0.88,
         "topK":            35,
+        # Gemini 2.5 Flash is a "thinking" model and thinking tokens count against
+        # maxOutputTokens — leaving them on starves (and truncates) short JSON/text
+        # replies. We do all arithmetic in code, so reasoning adds no value here.
+        # thinkingBudget=0 disables it (faster + cheaper too). Override via env if a
+        # future model needs it.
+        "thinkingConfig":  {"thinkingBudget": int(os.getenv("GOOGLE_THINKING_BUDGET", "0"))},
     }
     if as_json:
         gen_config["responseMimeType"] = "application/json"

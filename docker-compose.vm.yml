@@ -1,0 +1,56 @@
+# ── Finara VM stack (pull-only) ───────────────────────────────────────────────
+# Runs prebuilt images from Artifact Registry — the VM never builds anything, so
+# a small (2 GB) instance is plenty. Images are built + pushed from a dev machine:
+#   docker buildx build --platform linux/amd64 -t $BACKEND_IMAGE  --push ./backend
+#   docker buildx build --platform linux/amd64 -t $ML_IMAGE       --push ./ml-service
+#
+# On the VM:
+#   docker compose -f docker-compose.vm.yml --env-file .env.prod pull
+#   docker compose -f docker-compose.vm.yml --env-file .env.prod up -d
+#
+# Postgres is external (Neon), frontend is on Netlify, LLM is Gemini.
+
+services:
+
+  ml-service:
+    image: ${ML_IMAGE:-us-east1-docker.pkg.dev/finera-503501/finara/ml-service:latest}
+    container_name: finara-ml
+    restart: unless-stopped
+    environment:
+      LLM_PROVIDER: google
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:?set GOOGLE_API_KEY in .env.prod}
+      GOOGLE_MODEL: ${GOOGLE_MODEL:-gemini-2.5-flash}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?set SERVICE_TOKEN in .env.prod}
+      BACKEND_INTERNAL_URL: http://backend:8080
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ${BACKEND_IMAGE:-us-east1-docker.pkg.dev/finera-503501/finara/backend:latest}
+    container_name: finara-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${NEON_HOST}/neondb?sslmode=require
+      SPRING_DATASOURCE_USERNAME: ${NEON_USER:-neondb_owner}
+      SPRING_DATASOURCE_PASSWORD: ${NEON_PASSWORD:?set NEON_PASSWORD in .env.prod}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      ML_SERVICE_URL: http://ml-service:8000
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.prod}
+      JWT_EXPIRATION: 86400000
+      CORS_ALLOWED_ORIGINS: ${NETLIFY_URL:-http://localhost:3000}
+      SERVER_PORT: "8080"
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?set SERVICE_TOKEN in .env.prod}
+    depends_on:
+      ml-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
