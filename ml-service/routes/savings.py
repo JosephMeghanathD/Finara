@@ -103,6 +103,15 @@ Reply JSON only:
 FIXED_COSTS = {"rent & housing", "rent", "housing", "utilities", "mortgage"}
 ESSENTIAL_COSTS = {"groceries", "healthcare", "insurance", "personal care"}
 
+# The plan prompt demands one full cut object per category, so the reply grows
+# with the category count. A fixed token budget truncates the JSON mid-array as
+# soon as a user has more than a handful of categories (Gemini stops with
+# finishReason=MAX_TOKENS and the reply is unparseable), so both the number of
+# categories sent and the token budget are bounded/scaled instead.
+MAX_PROMPT_CATEGORIES = 12
+_TOKENS_PER_CUT       = 90    # measured ~65; padded for long category names/tips
+_TOKENS_PLAN_OVERHEAD = 400   # "plan" prose + envelope keys
+
 def _min_floor(category: str, current: float) -> float:
     key = category.lower()
     if any(f in key for f in FIXED_COSTS):
@@ -129,7 +138,11 @@ def create_savings_plan():
     discretionary = {k: v for k, v in spending_cats.items()
                      if not any(f in k.lower() for f in FIXED_COSTS)}
     all_disc = sorted(discretionary.items(), key=lambda x: x[1], reverse=True)
-    cat_text = "\n".join(f"- {k}: ${v:.0f}/mo" for k, v in all_disc)
+
+    # Only the biggest categories are worth the model's tokens — the tail is
+    # back-filled below at current spend. Bounding this bounds the output size.
+    prompt_disc = all_disc[:MAX_PROMPT_CATEGORIES]
+    cat_text = "\n".join(f"- {k}: ${v:.0f}/mo" for k, v in prompt_disc)
 
     surplus_label = "surplus" if monthly_surplus >= 0 else "deficit"
     history_block = f"{history_context}\n\n" if history_context else ""
@@ -163,9 +176,16 @@ Reply JSON:
   "on_track": true
 }}"""
 
+    # Scale the reply budget with the number of cuts requested. On Ollama num_ctx
+    # is the *whole* window (prompt + reply), so it has to cover both or the
+    # prompt gets silently trimmed.
+    num_predict = _TOKENS_PLAN_OVERHEAD + _TOKENS_PER_CUT * len(prompt_disc)
+    num_ctx     = max(1536, len(prompt) // 4 + num_predict + 256)
+
     try:
         t0 = time.time()
-        result = ask_gemma_json(prompt, system=ADVISOR_SYSTEM, num_ctx=1536, num_predict=600)
+        result = ask_gemma_json(prompt, system=ADVISOR_SYSTEM,
+                                num_ctx=num_ctx, num_predict=num_predict)
         gemma_ms = round((time.time() - t0) * 1000)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -173,6 +193,11 @@ Reply JSON:
     # Enforce floors — override any nonsense Gemma returns
     seen_cats = set()
     if isinstance(result.get("cuts"), list):
+        # A salvaged truncated reply can end in a half-written cut; a nameless one
+        # carries no information and would render as a blank $0 row. The back-fill
+        # below re-adds the category at current spend.
+        result["cuts"] = [c for c in result["cuts"]
+                          if isinstance(c, dict) and str(c.get("category", "")).strip()]
         for cut in result["cuts"]:
             cat     = cut.get("category", "")
             current = float(cut.get("current_monthly") or spending_cats.get(cat, 0))

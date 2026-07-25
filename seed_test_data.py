@@ -2,7 +2,10 @@
 """
 Finara Test Data Seed Script v3
 ================================
-Realistic 8-year financial profile (2020-01 → 2027-12) for a software professional.
+Realistic multi-year financial profile for a software professional.
+Default window is 2020-01 → 2026-08; override with SEED_START / SEED_END
+(YYYY-MM-DD). Era data is defined through 2027-12, so the window can be
+extended that far without touching the schedules.
 
   • Bi-weekly salary deposits with annual raises, year-end bonuses, tax refunds
   • Era-aware realism:
@@ -15,7 +18,7 @@ Realistic 8-year financial profile (2020-01 → 2027-12) for a software professi
   • Full fixed bills: rent (7 lease renewals), car loan, insurance, utilities,
     phone, and a subscription stack that grows/reprices on real-world dates
   • Variable spend scaled by a per-year inflation factor (2023 = 1.00 baseline)
-  • 46 anomalous transactions spread across the 8-year period
+  • Anomalous transactions spread across the period (those inside the window)
   • Deletes ALL prior data for this user before inserting
 
     Login : test@gmail.com / test
@@ -27,6 +30,7 @@ Run while Docker Compose is up:
     python3 seed_test_data.py
 Seed the cloud DB instead:
     DATABASE_URL='postgresql://...' python3 seed_test_data.py
+Restart the backend afterwards — @Cacheable months/summaries stay stale.
 """
 
 import os
@@ -44,8 +48,15 @@ random.seed(42)
 DB = dict(host="localhost", port=5432, database="finara",
           user="postgres", password="changeme")
 
-START = date(2020, 1, 1)
-END   = date(2027, 12, 31)
+# Seeded window. Override with SEED_START / SEED_END (YYYY-MM-DD) — the monthly
+# loop and every dated event (bonuses, refunds, anomalies) are clipped to END,
+# so shortening the window never emits stray future-dated rows.
+def _date_env(var, default):
+    raw = os.getenv(var)
+    return date.fromisoformat(raw) if raw else default
+
+START = _date_env("SEED_START", date(2020, 1, 1))
+END   = _date_env("SEED_END",   date(2026, 8, 31))
 
 # ── Merchant tables (description, category, merchant_name, min_$, max_$) ─────
 

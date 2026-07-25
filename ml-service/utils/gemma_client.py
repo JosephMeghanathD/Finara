@@ -232,6 +232,53 @@ def ask_gemma_chat(
     return _complete(messages, temperature, num_ctx, num_predict)
 
 
+def _close_open_structures(fragment: str):
+    """
+    Append the brackets needed to close `fragment`. Returns None if the fragment
+    ends inside a string literal — the caller then retries a shorter prefix.
+    """
+    stack, in_string, escaped = [], False, False
+    for ch in fragment:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if not stack:
+                return None          # more closers than openers — not repairable
+            stack.pop()
+    if in_string:
+        return None
+    return fragment + "".join(reversed(stack))
+
+
+def _salvage_truncated_json(text: str):
+    """
+    Recover the longest parseable prefix of a cut-off JSON object: walk back from
+    the end dropping the incomplete trailing element, then close what is still
+    open. Returns the dict, or None if nothing usable survives.
+    """
+    for end in range(len(text), 1, -1):
+        candidate = text[:end].rstrip().rstrip(",")
+        closed = _close_open_structures(candidate)
+        if closed is None:
+            continue
+        try:
+            parsed = json.loads(closed)
+        except json.JSONDecodeError:
+            continue
+        return parsed if isinstance(parsed, dict) else None
+    return None
+
+
 def ask_gemma_json(
     prompt: str,
     system: str = None,
@@ -265,4 +312,11 @@ def ask_gemma_json(
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as e:
+        # A reply that hit the token ceiling is cut off mid-structure (Gemini
+        # reports finishReason=MAX_TOKENS, Ollama just stops). The content up to
+        # the cut is still good, so salvage it rather than failing the request —
+        # routes fill in missing fields far better than a 500 does.
+        salvaged = _salvage_truncated_json(cleaned)
+        if salvaged is not None:
+            return salvaged
         raise RuntimeError(f"Model returned invalid JSON: {e} — raw: {raw[:200]}")
