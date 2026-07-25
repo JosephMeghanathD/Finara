@@ -444,6 +444,12 @@ def _resolve_chart_and_type(result: dict, explicit_chart: str | None) -> None:
         elif result.get("type") is None and chosen in ("treemap", "radar", "pie", "bar"):
             result["type"] = "category_breakdown"
             result["needs_fetch"] = True
+        elif result.get("type"):
+            # An explicitly named chart always needs real data: only
+            # build_chart_from_fetched can emit treemap/radar/table, so without a
+            # fetch the no-fetch fallback silently drops the request (or downgrades
+            # it to pie/bar). The planner's needs_fetch=false doesn't apply here.
+            result["needs_fetch"] = True
         return
 
     # Smart default when the user didn't name a chart.
