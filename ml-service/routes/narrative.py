@@ -339,8 +339,9 @@ def chat():
 
     # ── Phase 1: Intent parsing ────────────────────────────────────────────────
     intent       = None
-    fetched      = None
+    fetched      = None    # primary fetch, kept for the no-chart reply path
     fetched_text = ""
+    charts       = []      # one entry per chart the planner asked for
     phase1_ms    = 0
     phase2_ms    = 0
 
@@ -350,37 +351,56 @@ def chat():
             t1 = time.time()
             intent    = parse_intent(message, available_months, context, history=history)
             phase1_ms = round((time.time() - t1) * 1000)
-            logger.info("intent: needs_fetch=%s type=%s (%dms)",
-                        intent.get("needs_fetch"), intent.get("type"), phase1_ms)
+            logger.info("intent: needs_fetch=%s type=%s chart=%s extras=%d (%dms)",
+                        intent.get("needs_fetch"), intent.get("type"),
+                        intent.get("chart_type"), len(intent.get("extra_charts") or []),
+                        phase1_ms)
         except Exception as exc:
             logger.warning("Phase 1 intent parse failed (non-fatal): %s", exc)
             intent = None
 
         # Honor the UI-selected time range: default to it, clamp anything wider.
+        # Every chart in the answer shares the same ceiling.
         clamp_note = ""
         if intent and intent.get("needs_fetch") and data.get("ui_range_set"):
             try:
-                clamp_note = _clamp_intent_to_ui(
-                    intent, data.get("ui_start_month"), data.get("ui_end_month"))
+                ui_start, ui_end = data.get("ui_start_month"), data.get("ui_end_month")
+                clamp_note = _clamp_intent_to_ui(intent, ui_start, ui_end)
+                for spec in intent.get("extra_charts") or []:
+                    _clamp_intent_to_ui(spec, ui_start, ui_end)
             except Exception as exc:
                 logger.warning("range clamp failed (non-fatal): %s", exc)
 
-        # ── Phase 2: Live data fetch ───────────────────────────────────────────
+        # ── Phase 2: Live data fetch — primary spec plus any extra charts ──────
         if intent and intent.get("needs_fetch") and intent.get("type"):
-            try:
-                t2 = time.time()
-                fetched   = fetch_data(user_id, intent["type"], intent.get("params", {}),
-                                       token=service_token)
-                phase2_ms = round((time.time() - t2) * 1000)
-                if fetched:
-                    apply_sort(fetched, intent)
-                    fetched_text = summarise_for_prompt(fetched, intent)
-                    if clamp_note:
-                        fetched_text = clamp_note + "\n" + fetched_text
-                    logger.info("Phase 2 fetched %s in %dms, rows=%d",
-                                intent["type"], phase2_ms, len(fetched.get("data", [])))
-            except Exception as exc:
-                logger.warning("Phase 2 data fetch failed (non-fatal): %s", exc)
+            t2 = time.time()
+            summaries = []
+            specs = [intent] + list(intent.get("extra_charts") or [])
+            for i, spec in enumerate(specs):
+                try:
+                    f = fetch_data(user_id, spec["type"], spec.get("params", {}),
+                                   token=service_token)
+                except Exception as exc:
+                    logger.warning("Phase 2 fetch failed for %s (non-fatal): %s",
+                                   spec.get("type"), exc)
+                    continue
+                if not f:
+                    continue
+                if i == 0:
+                    fetched = f
+                apply_sort(f, spec)
+                chart = build_chart_from_fetched(f, spec)
+                if chart:
+                    charts.append(chart)
+                summary = summarise_for_prompt(f, spec)
+                if summary:
+                    summaries.append(summary)
+                logger.info("Phase 2 fetched %s → %s, rows=%d",
+                            spec["type"], spec.get("chart_type"), len(f.get("data", [])))
+            phase2_ms = round((time.time() - t2) * 1000)
+            fetched_text = "\n\n".join(summaries)
+            if fetched_text and clamp_note:
+                fetched_text = clamp_note + "\n" + fetched_text
 
     # ── Phase 3: Build context & call Gemma ───────────────────────────────────
 
@@ -447,12 +467,20 @@ def chat():
     # When live data was fetched, it (not the loaded month) defines the time frame.
     # Suppress the "selected period" pin and tell the model the chart is already drawn.
     if fetched_text:
+        chart_lead = (
+            f"{len(charts)} charts have ALREADY been generated from the LIVE FETCHED DATA below and are "
+            "shown to the user, one per data block. Cover every block in your answer and tie them together"
+            if len(charts) > 1 else
+            "A chart has ALREADY been generated from the LIVE FETCHED DATA below and is shown to the user"
+        )
         data_instruction = (
-            "\n\nA chart has ALREADY been generated from the LIVE FETCHED DATA below and is shown to the user. "
+            f"\n\n{chart_lead}. "
             "Summarize those exact numbers in plain language. Do NOT say you cannot create or render a chart, "
             "and do NOT critique or second-guess the chart type the user asked for. "
             "Describe the time range and grouping exactly as reflected in the LIVE FETCHED DATA, "
             "ignoring any other 'selected period' framing. "
+            "The 'User financial data' line covers a DIFFERENT, wider period than the charts — "
+            "never quote its totals as if they were the charted period, and never mix the two. "
             "If the data begins with a NOTE about the time range being limited to the selected range, "
             "mention that limitation to the user in one short sentence."
         )
@@ -475,19 +503,23 @@ def chat():
     gemma_ms  = round((time.time() - t3) * 1000)
     total_ms  = round((time.time() - t_total) * 1000)
 
-    # Build chart — prefer live fetched data when available
+    # Charts were already built from the live fetch above; otherwise fall back to
+    # inferring one from the reply text + loaded context.
     if fetched and intent:
-        chart = build_chart_from_fetched(fetched, intent)
         clean_reply = _PLACEHOLDER_RE.sub("", reply).strip()
         clean_reply = _CHART_BOILERPLATE_RE.sub("", clean_reply).strip()
         clean_reply = re.sub(r'\n{3,}', '\n\n', clean_reply)
     else:
         clean_reply, chart = _extract_chart(reply, context, message)
+        if chart:
+            charts = [chart]
 
     suggestions = _extract_suggestions(clean_reply, message, context)
     return jsonify({
         "reply":       clean_reply,
-        "chart":       chart,
+        # `chart` stays for older clients; `charts` is the full list.
+        "chart":       charts[0] if charts else None,
+        "charts":      charts,
         "suggestions": suggestions,
         "timing":      {"gemma_ms": gemma_ms, "phase1_ms": phase1_ms,
                         "phase2_ms": phase2_ms, "total_ms": total_ms},

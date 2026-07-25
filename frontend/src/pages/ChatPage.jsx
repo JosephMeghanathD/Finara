@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { aiApi } from '../utils/api'
 import { useTimeFilter } from '../hooks/useTimeFilter'
@@ -738,6 +738,18 @@ function renderChart(chart) {
   return <InlineChart chart={chart} />
 }
 
+// An answer can carry several charts. Stack them full-width — these are dense
+// (heatmaps, sankeys, tables) and don't survive being halved. Each chart card
+// brings its own top margin, so no extra gap is needed here.
+function renderCharts(charts, chart) {
+  const list = (charts?.length ? charts : chart ? [chart] : []).filter(Boolean)
+  if (!list.length) return null
+  return list.map((c, i) => {
+    const node = renderChart(c)
+    return node ? <Fragment key={`${c.type}-${i}`}>{node}</Fragment> : null
+  })
+}
+
 // ─── Message bubbles ──────────────────────────────────────────────────────────
 
 function ThinkingBubble() {
@@ -813,7 +825,7 @@ function ThinkingBubble() {
   )
 }
 
-function AssistantBubble({ content, chart, error, timestamp }) {
+function AssistantBubble({ content, chart, charts, error, timestamp }) {
   return (
     <div className="flex items-start gap-3 chat-message">
       <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -831,7 +843,7 @@ function AssistantBubble({ content, chart, error, timestamp }) {
           }}>
           {error
             ? <p className="text-sm" style={{ color: '#f87171' }}>{content}</p>
-            : <><AiText content={content} compact />{renderChart(chart)}</>
+            : <><AiText content={content} compact />{renderCharts(charts, chart)}</>
           }
         </div>
         {timestamp && (
@@ -1013,6 +1025,7 @@ export default function ChatPage() {
         role: 'assistant',
         content: data.reply,
         chart: data.chart || null,
+        charts: data.charts?.length ? data.charts : (data.chart ? [data.chart] : []),
         timestamp: now(),
       }])
       if (data.suggestions?.length) setSuggestions(data.suggestions)
@@ -1078,7 +1091,7 @@ export default function ChatPage() {
           {messages.map((msg, i) =>
             msg.role === 'user'
               ? <UserBubble key={i} content={msg.content} timestamp={msg.timestamp} />
-              : <AssistantBubble key={i} content={msg.content} chart={msg.chart} error={msg.error} timestamp={msg.timestamp} />
+              : <AssistantBubble key={i} content={msg.content} chart={msg.chart} charts={msg.charts} error={msg.error} timestamp={msg.timestamp} />
           )}
 
           {loading && <ThinkingBubble />}

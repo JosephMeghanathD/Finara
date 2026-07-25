@@ -19,16 +19,30 @@ Determine if the message requires fetching specific historical data NOT already 
 Output exactly this JSON shape:
 {
   "needs_fetch": <true|false>,
-  "type": <"year_over_year"|"monthly_totals"|"category_breakdown"|"daily_totals"|null>,
+  "type": <fetch type below, or null>,
+  "group_by": <"month"|"category"|"merchant"|"day"|"year"|null>,
   "params": <object>,
-  "chart_type": <"line"|"bar"|"pie"|null>,
-  "chart_title": <string>
+  "chart_type": <chart type below, or null>,
+  "chart_title": <string>,
+  "extra_charts": <array — usually [], see MULTIPLE CHARTS>
 }
 
-Output ALSO a "group_by" field: "month"|"category"|"merchant"|"day"|"year"|null.
 Honor the user's stated grouping, time window, filters, and chart type — do not substitute your own.
 
-GROUPING → TYPE (copy the user's stated grouping exactly):
+FETCH TYPES — what data to pull:
+- monthly_totals ......... one total per month
+- category_breakdown ..... one total per category
+- merchant_breakdown ..... one total per merchant / store / vendor
+- daily_totals ........... one total per day inside ONE month (params {"month":"YYYY-MM"})
+- year_over_year ......... one month compared across years (params {"month_num":"04"})
+- daily_by_year .......... day-by-day for one month across years (params {"month_num":"04"})
+- category_month_matrix .. a category x month grid
+- money_flow ............. income flowing out to categories
+- transaction_points ..... individual transactions with anomaly flags
+- transaction_search ..... individual transactions matching a keyword/filter
+- calendar_heatmap ....... every day of one year (params {"year":"2026"})
+
+GROUPING → FETCH TYPE (copy the user's stated grouping exactly):
 - by month → "monthly_totals" (group_by "month")
 - by category → "category_breakdown" (group_by "category")
 - by merchant / store / vendor → "merchant_breakdown" (group_by "merchant")
@@ -37,9 +51,11 @@ GROUPING → TYPE (copy the user's stated grouping exactly):
   (If the user says "[month] daily/total spendings over the years" it is STILL year_over_year.)
 
 TIME WINDOW (in params):
-- "last/past N months" → {"count": N}
+- "last/past N months" → {"count": N}   ← the N MOST RECENT months on file
 - explicit range → {"start_month":"YYYY-MM","end_month":"YYYY-MM"}
 - one month → {"month":"YYYY-MM"}
+- N months ENDING at a specific month → use start_month/end_month, never "count".
+  "count" always counts back from today, so it is wrong for "the 6 months up to March 2026".
 
 FILTERS (add to params when present):
 - amount → {"min_amount": N} and/or {"max_amount": N}
@@ -53,11 +69,43 @@ FOLLOW-UPS: for a short follow-up like "exclude rent", "sort ascending", "now as
 "same for last year" — KEEP the previous type, group_by, period and filters from the
 conversation and only ADD or CHANGE what the new message says.
 
-CHART TYPE — if the user names one, copy it. Available: pie, bar, line, table, stacked_bar,
-stacked_area, treemap, matrix_heatmap, heatmap (calendar), sankey, waterfall, radar, scatter, gauge.
-If they DON'T name one, pick the best fit: category over several months→stacked_bar; category one month→pie;
-monthly trend→line; by merchant→treemap; money flow→sankey; cash flow/paycheck→waterfall; budget/goal→gauge;
-daily calendar→heatmap; profile→radar; outliers/anomalies→scatter. Otherwise null.
+CHART TYPES — you may pick ANY of these. If the user names one, copy it exactly and never
+substitute a different one. If they do NOT name one, choose the chart that fits the SHAPE of
+the answer:
+- pie ............ share of one whole, single period, up to ~8 slices
+- bar ............ compare discrete items, or 2-3 time points
+- line ........... a trend across 3+ time points. NEVER use line for a single data point.
+- table .......... exact values, long lists, individual transactions
+- treemap ........ many items of very different sizes (merchants)
+- radar .......... a profile across 5-8 fixed dimensions
+- scatter ........ individual transactions, outliers, anomalies
+- stacked_bar .... category composition across several months
+- stacked_area ... category composition trending across several months
+- matrix_heatmap . category x month grid, colour = amount
+- heatmap ........ calendar of daily spending across one year
+- multi_line ..... one line per year, day-of-month on the x axis
+- month_heatmap .. day x year grid for a single month
+- sankey ......... income flowing out into categories
+- waterfall ...... income minus each category down to net
+- gauge .......... a single number against a target or limit
+
+CHART → REQUIRED FETCH TYPE (they must match or the chart cannot be drawn):
+- sankey | waterfall | gauge → money_flow
+- stacked_bar | stacked_area | matrix_heatmap → category_month_matrix
+- scatter → transaction_points
+- heatmap → calendar_heatmap
+- multi_line | month_heatmap → daily_by_year
+- pie | bar | line | treemap | radar | table → monthly_totals, category_breakdown,
+  merchant_breakdown, daily_totals, year_over_year or transaction_search
+
+MULTIPLE CHARTS — "extra_charts" holds ADDITIONAL charts to show alongside the primary one.
+Each entry is a full independent spec: {"type","group_by","params","chart_type","chart_title"}.
+Return 1-3 entries ONLY when one chart genuinely cannot answer the message:
+- open-ended requests: "summarize/analyse March", "how am I doing", "overview", "deep dive"
+- the user asks for more than one view: "category breakdown and my monthly trend"
+- a comparison that needs both a composition and a trend
+Return [] when a single chart answers the question, and ALWAYS [] when the user named one
+specific chart type. Entries omitting "params" inherit the primary window and filters.
 
 needs_fetch=true whenever the user asks for a grouping, trend, comparison, a period beyond the loaded month,
 or filtered totals. needs_fetch=false for greetings or questions already answered by the loaded context.
@@ -69,6 +117,11 @@ EXAMPLES:
 - "show june spendings over the years" → {"needs_fetch":true,"type":"year_over_year","group_by":"year","params":{"month_num":"06"},"chart_type":"line","chart_title":"June — Year over Year"}
 - "daily spending in June 2025" → {"needs_fetch":true,"type":"daily_totals","group_by":"day","params":{"month":"2025-06"},"chart_type":"bar","chart_title":"Daily Spending — June 2025"}
 - "last 12 months trend" → {"needs_fetch":true,"type":"monthly_totals","group_by":"month","params":{"count":12},"chart_type":"line","chart_title":"Monthly Spending Trend"}
+- "where does my money go" → {"needs_fetch":true,"type":"money_flow","group_by":"category","params":{"count":6},"chart_type":"sankey","chart_title":"Money Flow","extra_charts":[]}
+- "show my biggest outliers this year" → {"needs_fetch":true,"type":"transaction_points","group_by":null,"params":{"start_month":"2026-01","end_month":"2026-12"},"chart_type":"scatter","chart_title":"Transaction Outliers","extra_charts":[]}
+- "summarize March 2026" → {"needs_fetch":true,"type":"category_breakdown","group_by":"category","params":{"month":"2026-03"},"chart_type":"pie","chart_title":"March 2026 — Spending by Category","extra_charts":[{"type":"monthly_totals","group_by":"month","params":{"start_month":"2025-10","end_month":"2026-03"},"chart_type":"line","chart_title":"March 2026 in Context — Oct 2025 to Mar 2026"},{"type":"merchant_breakdown","group_by":"merchant","params":{"month":"2026-03"},"chart_type":"treemap","chart_title":"March 2026 — Top Merchants"}]}
+- "give me an overview of last year" → {"needs_fetch":true,"type":"category_month_matrix","group_by":"category","params":{"count":12},"chart_type":"stacked_bar","chart_title":"Spending by Category — Last 12 Months","extra_charts":[{"type":"monthly_totals","group_by":"month","params":{"count":12},"chart_type":"line","chart_title":"Monthly Spending Trend"},{"type":"money_flow","group_by":"category","params":{"count":12},"chart_type":"sankey","chart_title":"Where the Money Went"}]}
+- "category breakdown and my monthly trend" → {"needs_fetch":true,"type":"category_breakdown","group_by":"category","params":{"count":6},"chart_type":"pie","chart_title":"Spending by Category","extra_charts":[{"type":"monthly_totals","group_by":"month","params":{"count":6},"chart_type":"line","chart_title":"Monthly Spending Trend"}]}
 """
 
 # Generous gate — only skip the planner when the message shows NONE of these.
@@ -84,13 +137,16 @@ _DATA_HINTS = [
     "chart", "graph", "pie", "bar", "line", "table", "plot",
     "spend", "spent", "spending", "charge", "transaction", "purchase", "cost",
     "total", "how much", "top", "biggest", "highest", "lowest", "average",
+    "summarize", "summarise", "summary", "overview", "analyze", "analyse", "analysis",
+    "deep dive", "how am i doing", "walk me through", "tell me about",
     "merchant", "category", "categories", "month", "year",
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december",
     "$", "over", "under", "between", "more than", "less than",
 ]
 
-_NULL_RESULT = {"needs_fetch": False, "type": None, "params": {}, "chart_type": None, "chart_title": ""}
+_NULL_RESULT = {"needs_fetch": False, "type": None, "params": {}, "chart_type": None,
+                "chart_title": "", "extra_charts": []}
 
 # Matches amounts like "$2000", "2k", "2.5k", "500"
 _AMT_RE = r'\$?(\d+(?:\.\d+)?)(k)?'
@@ -185,6 +241,7 @@ def _fast_yoy_override(message: str) -> dict | None:
             "params": params,
             "chart_type": "month_heatmap" if wants_heatmap else "multi_line",
             "chart_title": f"{month_name} Daily Spending — Year over Year",
+            "extra_charts": [],
         }
 
     # Plain annual totals
@@ -198,6 +255,7 @@ def _fast_yoy_override(message: str) -> dict | None:
         "params": yoy_params,
         "chart_type": "line",
         "chart_title": f"{month_name} Spending — Year over Year",
+        "extra_charts": [],
     }
 
 
@@ -218,6 +276,7 @@ def _fast_heatmap_override(message: str) -> dict | None:
         "params":      {"year": year},
         "chart_type":  "heatmap",
         "chart_title": f"{year} Spending Calendar",
+        "extra_charts": [],
     }
 
 
@@ -279,6 +338,7 @@ def _fast_search_override(message: str) -> dict | None:
         "params":      params,
         "chart_type":  "table",
         "chart_title": title,
+        "extra_charts": [],
     }
 
 
@@ -305,7 +365,11 @@ _CHART_WORD_RE = [
     (re.compile(r'\bheat\s?map\b'), "heatmap"),
     (re.compile(r'\bpie\b'), "pie"),
     (re.compile(r'\bbar\b'), "bar"),
-    (re.compile(r'\b(?:line|trend)\b'), "line"),
+    # "trend" is NOT here: it describes the shape of an answer, not a chart the user
+    # named. Treating it as explicit forced a line onto category breakdowns and
+    # suppressed companion charts in "…breakdown AND my monthly trend". Trend-shaped
+    # queries still land on a line via the monthly_totals default below.
+    (re.compile(r'\bline\b'), "line"),
     (re.compile(r'\b(?:table|list)\b'), "table"),
 ]
 
@@ -315,6 +379,17 @@ _CHART_FETCH = {
     "stacked_bar": "category_month_matrix", "stacked_area": "category_month_matrix",
     "matrix_heatmap": "category_month_matrix",
     "scatter": "transaction_points",
+    "heatmap": "calendar_heatmap",
+    "multi_line": "daily_by_year", "month_heatmap": "daily_by_year",
+}
+
+# Fetch types that cannot run without a specific param. `_fill_required_params`
+# derives the value from whatever window the planner did produce; a spec that
+# still can't be satisfied is dropped rather than sent to the backend.
+_FETCH_REQUIRED_PARAMS = {
+    "daily_by_year":    ("month_num",),
+    "calendar_heatmap": ("year",),
+    "daily_totals":     ("month",),
 }
 
 # Phrases that imply a specific fetch type regardless of grouping.
@@ -416,7 +491,203 @@ def _span_months(params: dict) -> int:
 _ALL_CHART_TYPES = {
     "pie", "bar", "line", "table", "treemap", "radar", "scatter", "sankey",
     "waterfall", "gauge", "stacked_bar", "stacked_area", "matrix_heatmap", "heatmap",
+    "multi_line", "month_heatmap",
 }
+
+# Every fetch type the Java /api/service/query endpoint implements. The planner is
+# told about all of them; anything else it invents is discarded.
+_ALL_FETCH_TYPES = {
+    "monthly_totals", "category_breakdown", "merchant_breakdown", "daily_totals",
+    "year_over_year", "daily_by_year", "category_month_matrix", "money_flow",
+    "transaction_points", "transaction_search", "calendar_heatmap",
+}
+
+# Charts that read a 1-D label/value series and so work with any aggregate fetch.
+_SERIES_CHARTS = {"pie", "bar", "line", "table", "treemap", "radar"}
+
+_MAX_EXTRA_CHARTS = 3
+
+# Params that define WHICH period a chart covers (as opposed to filters, which
+# every chart in one answer should share).
+_WINDOW_KEYS = ("month", "count", "start_month", "end_month", "month_num", "year")
+
+
+def _shift_month(ym: str, delta: int) -> str:
+    """'2026-03' shifted by delta months."""
+    y, m = int(ym[:4]), int(ym[5:7])
+    idx = y * 12 + (m - 1) + delta
+    return f"{idx // 12:04d}-{idx % 12 + 1:02d}"
+
+
+def _anchor_count_window(params: dict, anchor_month: str) -> None:
+    """Turn a bare `count` into an explicit window ENDING at `anchor_month`.
+
+    The backend reads `count` as "the N most recent months in the database", so a
+    companion chart for 'summarize March 2026' would otherwise plot the last 6
+    months of all data instead of the 6 months leading up to March 2026."""
+    count = params.get("count")
+    if not count or params.get("start_month") or params.get("end_month"):
+        return
+    try:
+        n = max(1, int(count))
+    except (TypeError, ValueError):
+        return
+    params.pop("count", None)
+    params["end_month"]   = anchor_month
+    params["start_month"] = _shift_month(anchor_month, -(n - 1))
+
+
+def _fill_required_params(fetch_type: str, params: dict) -> bool:
+    """Derive any missing required param for `fetch_type` from the window already
+    in `params`. Mutates params. Returns False when the spec is unusable."""
+    for key in _FETCH_REQUIRED_PARAMS.get(fetch_type, ()):
+        if params.get(key):
+            continue
+        month = params.get("month") or params.get("end_month") or params.get("start_month") or ""
+        if key == "month_num":
+            if params.get("month_num"):
+                continue
+            if len(month) >= 7:
+                params["month_num"] = month[5:7]
+            else:
+                return False
+        elif key == "year":
+            if len(month) >= 4:
+                params["year"] = month[:4]
+            else:
+                params["year"] = str(_CURRENT_YEAR)
+        elif key == "month":
+            if len(month) >= 7:
+                params["month"] = month[:7]
+            else:
+                return False
+    return True
+
+
+def _normalize_chart_spec(spec: dict, primary: dict) -> dict | None:
+    """Validate one extra-chart spec from the planner and fill in what it omitted.
+
+    Returns a ready-to-fetch spec {type, params, chart_type, chart_title} or None
+    when the chart type is unknown or its required data can't be assembled."""
+    if not isinstance(spec, dict):
+        return None
+
+    chart_type = spec.get("chart_type")
+    if chart_type not in _ALL_CHART_TYPES:
+        return None
+
+    # The chart dictates the fetch when it can only be drawn from one shape of data.
+    fetch_type = _CHART_FETCH.get(chart_type)
+    if not fetch_type:
+        fetch_type = (spec.get("type")
+                      or _GROUP_TO_TYPE.get(spec.get("group_by"))
+                      or primary.get("type"))
+    if fetch_type not in _ALL_FETCH_TYPES:
+        return None
+    # A series chart needs a series to draw: reject e.g. treemap over money_flow.
+    if chart_type in _SERIES_CHARTS and fetch_type in (
+            "money_flow", "category_month_matrix", "transaction_points",
+            "calendar_heatmap", "daily_by_year"):
+        return None
+
+    # Inherit the primary filters, but let a spec that states its own time window own
+    # it completely — the backend's resolveRange reads `month` before `count`, so a
+    # leftover `month` would silently pin a 6-month trend to a single month.
+    primary_params = primary.get("params") or {}
+    params = dict(primary_params)
+    spec_params = spec.get("params") if isinstance(spec.get("params"), dict) else {}
+    if any(k in spec_params for k in _WINDOW_KEYS):
+        for k in _WINDOW_KEYS:
+            params.pop(k, None)
+    params.update(spec_params)
+
+    # When the question is anchored to one month, a companion chart's "last N
+    # months" must lead up to THAT month, not to the newest month on file.
+    anchor = primary_params.get("month") or primary_params.get("end_month")
+    if anchor and len(anchor) >= 7 and fetch_type != "calendar_heatmap":
+        _anchor_count_window(params, anchor[:7])
+
+    if not _fill_required_params(fetch_type, params):
+        return None
+
+    return {
+        "type":        fetch_type,
+        "params":      params,
+        "chart_type":  chart_type,
+        "chart_title": (spec.get("chart_title") or "").strip(),
+    }
+
+
+# Open-ended asks where a single chart is rarely enough. Used only as a floor when
+# the planner returned no extra charts of its own — the LLM's choice always wins.
+_OVERVIEW_RE = re.compile(
+    r'\b(summar(?:y|ise|ize|izing|ising)|overview|deep\s*dive|full\s+picture|'
+    r'break\s*down\s+everything|how\s+am\s+i\s+doing|analy[sz]e|analysis|'
+    r'walk\s+me\s+through|tell\s+me\s+about)\b'
+)
+
+
+def _fallback_extra_charts(primary: dict) -> list:
+    """Second/third view for an open-ended request the planner answered with one chart.
+
+    Pairs a composition chart with a trend (or vice-versa) so 'summarize March'
+    doesn't come back as a lone data point."""
+    t = primary.get("type")
+    params = dict(primary.get("params") or {})
+    span = _span_months(params)
+
+    if t in ("category_breakdown", "money_flow", "merchant_breakdown"):
+        anchor = params.get("month") or params.get("end_month")
+        trend = dict(params)
+        trend.pop("month", None)
+        if anchor and len(anchor) >= 7:
+            # Six months leading up to the month being asked about.
+            trend.pop("count", None)
+            trend["end_month"]   = anchor[:7]
+            trend["start_month"] = _shift_month(anchor[:7], -5)
+        elif not trend.get("count") and not trend.get("start_month"):
+            trend["count"] = 6
+        return [{"type": "monthly_totals", "params": trend,
+                 "chart_type": "line" if _span_months(trend) >= 3 else "bar",
+                 "chart_title": "Monthly Spending Trend"}]
+
+    if t in ("monthly_totals", "year_over_year", "daily_totals", "category_month_matrix"):
+        return [{"type": "category_breakdown", "params": params,
+                 "chart_type": "pie" if span <= 2 else "bar",
+                 "chart_title": "Spending by Category"}]
+
+    return []
+
+
+def _resolve_extra_charts(result: dict, message: str, explicit_chart: str | None) -> list:
+    """Turn the planner's raw `extra_charts` into validated, de-duplicated specs."""
+    raw = result.pop("extra_charts", None)
+
+    # A user who named one chart type wants exactly that chart.
+    if explicit_chart:
+        return []
+
+    specs, seen = [], {(result.get("type"), result.get("chart_type"))}
+    for item in (raw if isinstance(raw, list) else []):
+        spec = _normalize_chart_spec(item, result)
+        if not spec:
+            continue
+        key = (spec["type"], spec["chart_type"])
+        if key in seen:
+            continue
+        seen.add(key)
+        specs.append(spec)
+        if len(specs) >= _MAX_EXTRA_CHARTS:
+            break
+
+    if not specs and _OVERVIEW_RE.search(message.lower()):
+        for spec in _fallback_extra_charts(result):
+            key = (spec["type"], spec["chart_type"])
+            if key not in seen:
+                seen.add(key)
+                specs.append(spec)
+
+    return specs
 
 
 def _resolve_chart_and_type(result: dict, explicit_chart: str | None) -> None:
@@ -439,8 +710,15 @@ def _resolve_chart_and_type(result: dict, explicit_chart: str | None) -> None:
         result["chart_type"] = chosen
         ft = _CHART_FETCH.get(chosen)
         if ft:
-            result["type"] = ft
-            result["needs_fetch"] = True
+            # Charts locked to one fetch shape (sankey, heatmap, multi_line …) are only
+            # drawable if that fetch's required params can be derived. If not, keep the
+            # data the planner did resolve and fall through to the best-fit default.
+            if _fill_required_params(ft, params):
+                result["type"] = ft
+                result["needs_fetch"] = True
+                return
+            logger.info("chart %s dropped: %s needs params it can't derive", chosen, ft)
+            result["chart_type"] = None
         elif result.get("type") is None and chosen in ("treemap", "radar", "pie", "bar"):
             result["type"] = "category_breakdown"
             result["needs_fetch"] = True
@@ -502,7 +780,7 @@ def _format_history(history: list, limit: int = 4) -> str:
 
 
 def _classify_llm(message: str, available_months: list, context: dict,
-                  history: list = None, num_predict: int = 260) -> dict:
+                  history: list = None, num_predict: int = 480) -> dict:
     months_sample = ", ".join(sorted(available_months)[-8:]) if available_months else "none"
     history_months = [e.get("month", "") for e in context.get("monthly_history", [])]
     transcript = _format_history(history)
@@ -631,8 +909,13 @@ def parse_intent(message: str, available_months: list, context: dict, history: l
     # Resolve the chart type (explicit wins; else best-fit) and any chart-driven fetch type.
     _resolve_chart_and_type(result, chart_type)
 
+    # Additional charts the planner asked for, validated against what the
+    # backend can actually fetch and the frontend can actually draw.
+    result["extra_charts"] = _resolve_extra_charts(result, message, chart_type)
+
     # No usable type → don't fetch (chat falls back to loaded context).
     if not result.get("type"):
         result["needs_fetch"] = False
+        result["extra_charts"] = []
 
     return result

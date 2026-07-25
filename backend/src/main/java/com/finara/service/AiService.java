@@ -280,6 +280,8 @@ public class AiService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("reply", resp != null ? (String) resp.get("reply") : "I'm unable to respond right now.");
         if (resp != null && resp.get("chart")       != null) result.put("chart",       resp.get("chart"));
+        // A reply may carry several charts; `chart` above is charts[0] for older clients.
+        if (resp != null && resp.get("charts")      != null) result.put("charts",      resp.get("charts"));
         if (resp != null && resp.get("suggestions") != null) result.put("suggestions", resp.get("suggestions"));
         return result;
     }

@@ -18,14 +18,19 @@ export function TimeFilterProvider({ children }) {
       if (data.length > 0) {
         const newest  = data[0]                     // most recent (desc sorted)
         const oldest  = data[data.length - 1]
-        const today   = format(new Date(), 'yyyy-MM-dd')
-        const min     = oldest + '-01'
         const newestLastDay = format(endOfMonth(parseISO(newest + '-01')), 'yyyy-MM-dd')
 
-        setMinDate(min)
-        setMaxDate(today)
+        // Bound by the data, not the wall clock. Clamping to today inverted the
+        // default range whenever statements ran past today (start after end), and
+        // made the newest months unselectable.
+        setMinDate(oldest + '-01')
+        setMaxDate(newestLastDay)
+
+        // Default: the last 1 month of data, calendar-aligned. Alignment matters —
+        // consumers derive startMonth/endMonth via slice(0,7), so a trailing
+        // 30-day window would straddle two months and widen every query.
         setStartDate(newest + '-01')
-        setEndDate(newestLastDay < today ? newestLastDay : today)
+        setEndDate(newestLastDay)
       }
     }).catch(() => {})
   }, [])

@@ -1,13 +1,21 @@
-import { format, subDays, subMonths, parseISO } from 'date-fns'
+import { format, subDays, subMonths, startOfMonth, endOfMonth, parseISO } from 'date-fns'
 
+const iso = dt => format(dt, 'yyyy-MM-dd')
+
+// Presets are anchored to the newest day that HAS data, not to the wall clock.
+// Anchoring to today silently excluded the most recent months whenever the loaded
+// statements ran past today, and produced empty windows for older datasets.
+//
+// The month presets are calendar-aligned: pages derive startMonth/endMonth with
+// slice(0,7), so "3 months back from the 25th" used to span 4 partial months.
 const PRESETS = [
-  { label: 'Today', fn: today => [today, today] },
-  { label: '7D',    fn: today => [format(subDays(new Date(today), 6),  'yyyy-MM-dd'), today] },
-  { label: '30D',   fn: today => [format(subDays(new Date(today), 29), 'yyyy-MM-dd'), today] },
-  { label: '3M',    fn: today => [format(subMonths(new Date(today), 3),  'yyyy-MM-dd'), today] },
-  { label: '6M',    fn: today => [format(subMonths(new Date(today), 6),  'yyyy-MM-dd'), today] },
-  { label: '1Y',    fn: today => [format(subMonths(new Date(today), 12), 'yyyy-MM-dd'), today] },
-  { label: 'All',   fn: (today, min) => [min, today] },
+  { label: '7D',  fn: a => [iso(subDays(parseISO(a), 6)),  a] },
+  { label: '30D', fn: a => [iso(subDays(parseISO(a), 29)), a] },
+  { label: '1M',  fn: a => [iso(startOfMonth(parseISO(a))),                iso(endOfMonth(parseISO(a)))] },
+  { label: '3M',  fn: a => [iso(startOfMonth(subMonths(parseISO(a), 2))),  iso(endOfMonth(parseISO(a)))] },
+  { label: '6M',  fn: a => [iso(startOfMonth(subMonths(parseISO(a), 5))),  iso(endOfMonth(parseISO(a)))] },
+  { label: '1Y',  fn: a => [iso(startOfMonth(subMonths(parseISO(a), 11))), iso(endOfMonth(parseISO(a)))] },
+  { label: 'All', fn: (a, min) => [min, iso(endOfMonth(parseISO(a)))] },
 ]
 
 const inputStyle = {
@@ -23,11 +31,11 @@ const inputStyle = {
 }
 
 export default function DateRangePicker({ startDate, endDate, minDate, maxDate, onChange }) {
-  const today = format(new Date(), 'yyyy-MM-dd')
-  const effectiveMin = minDate || today
+  const anchor = maxDate || format(new Date(), 'yyyy-MM-dd')
+  const effectiveMin = minDate || anchor
 
   const activePreset = PRESETS.find(p => {
-    const [s, e] = p.fn(today, effectiveMin)
+    const [s, e] = p.fn(anchor, effectiveMin)
     return s === startDate && e === endDate
   })
 
@@ -38,7 +46,7 @@ export default function DateRangePicker({ startDate, endDate, minDate, maxDate, 
         {PRESETS.map(p => (
           <button key={p.label}
             onClick={() => {
-              const [s, e] = p.fn(today, effectiveMin)
+              const [s, e] = p.fn(anchor, effectiveMin)
               onChange({ startDate: s, endDate: e })
             }}
             className="px-2.5 py-1 rounded-md text-xs font-medium transition-all"

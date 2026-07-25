@@ -249,6 +249,10 @@ def build_chart_from_fetched(fetched: dict, intent: dict) -> dict | None:
     if qtype in _AGG_TYPES:
         if chart_type not in ("pie", "bar", "line", "table", "treemap", "radar"):
             chart_type = _default_chart_type(qtype)
+        # Categories and merchants have no time order, so a line connecting them
+        # implies a trend that doesn't exist. Compare them as bars instead.
+        if chart_type == "line" and qtype in ("category_breakdown", "merchant_breakdown"):
+            chart_type = "bar"
         return _shape_chart(_rows_to_pairs(qtype, data), chart_type, title)
 
     if qtype == "transaction_search":
@@ -303,6 +307,10 @@ def _rows_to_pairs(qtype: str, data: list) -> list:
 
 def _shape_chart(pairs: list, chart_type: str, title: str) -> dict:
     """Reshape label/value pairs into the frontend's expected shape for the chart type."""
+    # A line needs at least two points to draw a segment; one point renders an
+    # empty plot. Downgrade rather than emit a chart the user can't read.
+    if chart_type == "line" and len(pairs) < 2:
+        chart_type = "bar"
     if chart_type == "line":
         data = []
         for p in pairs:

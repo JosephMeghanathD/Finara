@@ -5,7 +5,7 @@ import DateRangePicker from './DateRangePicker'
 import {
   LogOut, LayoutDashboard, Upload, BookOpen, MessageSquare,
   Lightbulb, PiggyBank, List, AlertTriangle, TrendingUp,
-  Target, BarChart2, Menu,
+  Target, BarChart2, Menu, PieChart, Building2,
 } from 'lucide-react'
 
 const PAGE_META = {
@@ -20,10 +20,16 @@ const PAGE_META = {
   '/forecast':     { label: 'Forecast',        icon: TrendingUp,      color: '#22d3ee' },
   '/budget':       { label: 'Budget',          icon: Target,          color: '#a78bfa' },
   '/compare':      { label: 'Compare Months',  icon: BarChart2,       color: '#ec4899' },
+  '/insights':     { label: 'Spending Insights', icon: PieChart,      color: '#f59e0b' },
+  '/stocks':       { label: 'Invest Instead',  icon: Building2,       color: '#34d399' },
 }
 
+// Every page that reads the global range from useTimeFilter gets the picker.
+// Excluded on purpose: /upload has no time dimension, /coach is week-keyed
+// (?week=YYYY-Www), and /forecast + /compare drive their own month selectors.
 const RANGE_PAGES = new Set([
   '/', '/story', '/transactions', '/anomalies', '/chat', '/savings', '/budget',
+  '/insights', '/stocks',
 ])
 
 export default function TopBar({ onMenuOpen }) {
