@@ -50,14 +50,29 @@ function inferCategory(text) {
 // one. A bare "tell me more about this tip" gave the planner nothing to fetch and
 // the model answered that it couldn't see how tips are generated.
 //
-// The category is deliberately NOT named here: the tip prose already carries the
-// real category name (tips are generated from live category totals, and the
-// backend matches category names exactly), so the planner reads it from the quote.
-function tipPrefill(norm) {
-  const how = norm.how_to ? ` It suggests: "${norm.how_to}"` : ''
-  return `My Finara weekly coach tip says: "${norm.text || ''}"${how} ` +
-         'Break down the spending behind this tip by merchant, show how it has trended ' +
-         'over the last 6 months, and give me specific ways to act on it.'
+// Two things the chat cannot work out on its own:
+//   1. Coach figures are ONE WEEK totals; chat context is the selected month range.
+//      Without saying so, the model hunts for a $98 transaction, fails, and says so.
+//   2. The service query is month-granular (no day-range fetch), so the closest real
+//      data to "this week" is the containing month — name it so the fetch lands there.
+// The category is deliberately NOT named: the tip prose already carries the real
+// category name (tips come from live category totals, and the backend matches
+// category names exactly), so the planner reads it straight out of the quote.
+function tipPrefill(norm, date = new Date()) {
+  const start = startOfISOWeek(date)
+  const end   = endOfISOWeek(date)
+  const week  = `${format(start, 'MMM d')}–${format(end, 'MMM d, yyyy')}`
+  // A week that straddles two months can't be one daily chart (daily_totals takes a
+  // single month), so anchor on the month holding the end of the week.
+  const month = format(end, 'MMMM yyyy')
+  const how   = norm.how_to ? ` It suggests: "${norm.how_to}"` : ''
+
+  return `My Finara weekly coach tip for the week of ${week} says: "${norm.text || ''}"${how} ` +
+         `Every dollar figure in that tip is a total for that one week — not a single ` +
+         `transaction and not a monthly total, so don't try to match it against my ` +
+         `selected-period totals. For the category this tip is about, show me daily spending ` +
+         `in ${month} and my top merchants in that same category, then give me specific ` +
+         `ways to act on it.`
 }
 
 function normalizeTip(tip) {
