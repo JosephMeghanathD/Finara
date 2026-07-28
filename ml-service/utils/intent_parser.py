@@ -280,27 +280,34 @@ def _fast_heatmap_override(message: str) -> dict | None:
     }
 
 
+# A transaction search is only a transaction search when the user names the thing
+# being searched. A bare verb ("look for", "find all") is not enough: coach tips and
+# other prose routinely say things like "Look for small ways to reduce this cost",
+# which used to be read as a search for transactions matching "reduce".
+_TXN_NOUN = r'(?:charges?|transactions?|payments?|purchases?)'
+
 _SEARCH_SIGNALS = [
-    "find all", "search for", "look for", "look up",
-    "show all charges", "show all transactions",
-    "list all charges", "list all transactions",
-    "list my charges", "list my transactions",
-    "transactions from", "transactions at",
-    "charges from", "charges at",
-    "payments to", "payments at",
-    "show me charges", "show me transactions",
+    # "find/show/list/search for … <txn noun>" — the noun may trail a merchant name.
+    re.compile(r'\b(?:find|search\s+for|look\s+(?:for|up)|show|list|give\s+me|pull\s+up)\s+'
+               r'(?:me\s+)?(?:all\s+|my\s+|the\s+)*(?:[\w&\'\.\-]+\s+){0,3}?' + _TXN_NOUN + r'\b'),
+    # "transactions from amazon", "payments to netflix", "charges at whole foods"
+    re.compile(r'\b' + _TXN_NOUN + r'\s+(?:from|at|to|by)\b'),
 ]
 
 def _fast_search_override(message: str) -> dict | None:
     msg = message.lower()
-    if not any(sig in msg for sig in _SEARCH_SIGNALS):
+    if not any(sig.search(msg) for sig in _SEARCH_SIGNALS):
         return None
 
-    # Extract merchant/keyword after preposition
+    # Extract merchant/keyword after preposition. The preposition must hang off a
+    # transaction noun ("charges from X") — a loose "to"/"by" anywhere in the
+    # sentence grabs whatever verb follows it.
     keyword = ""
     for pat in [
-        r'\b(?:from|at|to|by)\s+([A-Za-z0-9&\'\.\-]{2,30}?)(?=\s+(?:over|under|above|below|last|in\s+20|this|between|charges?|transactions?|payments?|$))',
-        r'\b(?:find all|search for|look for)\s+(?:all\s+)?(?:my\s+)?([A-Za-z0-9&\'\.\- ]{2,25}?)\s+(?:charges?|transactions?|payments?|purchases?)',
+        r'\b' + _TXN_NOUN + r'\s+(?:from|at|to|by)\s+([A-Za-z0-9&\'\.\- ]{2,30}?)'
+        r'(?=\s+(?:over|under|above|below|last|this|between|during|for)\b|\s+in\s+20|\s*$)',
+        r'\b(?:find all|search for|look (?:for|up)|show me|show|list)\s+(?:all\s+)?(?:my\s+)?'
+        r'([A-Za-z0-9&\'\.\- ]{2,25}?)\s+' + _TXN_NOUN,
     ]:
         m = re.search(pat, msg, re.IGNORECASE)
         if m:
@@ -440,7 +447,12 @@ def _explicit_exclude(message: str) -> str | None:
         return None
     term = _EXCLUDE_TAIL_RE.sub("", m.group(1).strip())
     term = term.strip().strip('.,"\'')
-    return term or None
+    # A real exclusion names a merchant or category, not a clause. Messages that
+    # quote prose ("...cut costs without sacrificing your weekend plans") would
+    # otherwise filter the whole query on a sentence fragment that matches nothing.
+    if not term or len(term.split()) > 4 or len(term) > 40 or any(c in term for c in '.?!'):
+        return None
+    return term
 
 
 def _explicit_sort(msg: str):

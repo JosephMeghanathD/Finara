@@ -46,6 +46,20 @@ function inferCategory(text) {
   return 'Tip'
 }
 
+// Chat treats every message as a data question, so the prefill has to read like
+// one. A bare "tell me more about this tip" gave the planner nothing to fetch and
+// the model answered that it couldn't see how tips are generated.
+//
+// The category is deliberately NOT named here: the tip prose already carries the
+// real category name (tips are generated from live category totals, and the
+// backend matches category names exactly), so the planner reads it from the quote.
+function tipPrefill(norm) {
+  const how = norm.how_to ? ` It suggests: "${norm.how_to}"` : ''
+  return `My Finara weekly coach tip says: "${norm.text || ''}"${how} ` +
+         'Break down the spending behind this tip by merchant, show how it has trended ' +
+         'over the last 6 months, and give me specific ways to act on it.'
+}
+
 function normalizeTip(tip) {
   if (typeof tip === 'string') return { text: tip, category: inferCategory(tip), impact: 'medium', how_to: '' }
   return {
@@ -303,8 +317,8 @@ function TipCard({ tip, index, done, onToggleDone, onCopy }) {
             <div style={{ flex: 1 }} />
             <Link
               to="/chat"
-              state={{ prefillMessage: `Tell me more about this tip: "${norm.text}"` }}
-              title="Ask Fiana about this tip"
+              state={{ prefillMessage: tipPrefill(norm) }}
+              title="Ask Finara about this tip"
               style={{ color: 'var(--text-3)', padding: '4px', lineHeight: 0, display: 'flex', transition: 'color 0.15s' }}
               onMouseEnter={e => e.currentTarget.style.color = 'var(--brand)'}
               onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
