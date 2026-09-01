@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { txnApi } from '../utils/api'
+import { txnApi, budgetApi } from '../utils/api'
 import { useAuth } from '../hooks/useAuth'
 import { useTimeFilter } from '../hooks/useTimeFilter'
 import {
@@ -49,6 +49,18 @@ const CATEGORY_COLORS = {
 // Neutral is reserved for genuinely unknown labels — every known category above
 // must resolve to a hue.
 const CAT_COLOR = cat => CATEGORY_COLORS[cat] || '#94A3B8'
+const BUDGET_COLOR = pct => pct > 100 ? '#EF4444' : pct > 88 ? '#F59E0B' : '#10B981'
+
+function monthsInRange(start, end) {
+  const out = []
+  let [y, m]     = start.split('-').map(Number)
+  const [ey, em] = end.split('-').map(Number)
+  while (y < ey || (y === ey && m <= em)) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`)
+    if (++m > 12) { m = 1; y++ }
+  }
+  return out
+}
 
 function fmtMonth(m) {
   try { return format(parseISO(m + '-01'), 'MMMM yyyy') } catch { return m }
@@ -121,6 +133,7 @@ export default function DashboardPage() {
   const { months, startDate, endDate, startMonth, endMonth } = useTimeFilter()
   const [summary, setSummary]               = useState(null)
   const [recent, setRecent]                 = useState([])
+  const [budgets, setBudgets]               = useState({ totals: {}, covered: {}, months: 0 })
   const [loadingSummary, setLoadingSummary] = useState(false)
   const [loadingRecent, setLoadingRecent]   = useState(false)
 
@@ -140,12 +153,39 @@ export default function DashboardPage() {
       .finally(() => setLoadingRecent(false))
   }, [startMonth, endMonth])
 
+  useEffect(() => {
+    if (!startMonth || !endMonth) return
+    const monthList = monthsInRange(startMonth, endMonth)
+    if (monthList.length === 0) return
+    let stale = false
+    Promise.all(monthList.map(m =>
+      budgetApi.get(m, false).then(r => r.data?.budget || {}).catch(() => ({}))
+    )).then(perMonth => {
+      if (stale) return
+      const totals = {}, covered = {}
+      perMonth.forEach(monthBudget => {
+        Object.entries(monthBudget).forEach(([cat, amt]) => {
+          const v = Number(amt) || 0
+          if (v <= 0) return
+          totals[cat]  = (totals[cat] || 0) + v
+          covered[cat] = (covered[cat] || 0) + 1   // for the partial-coverage note
+        })
+      })
+      setBudgets({ totals, covered, months: monthList.length })
+    })
+    return () => { stale = true }
+  }, [startMonth, endMonth])
+
   const rangeLabel = fmtRange(startMonth, endMonth)
   const cats = summary?.categories ? Object.entries(summary.categories).sort((a, b) => b[1] - a[1]) : []
   const hasData = summary && summary.total > 0
   const narrative = hasData ? buildNarrative(summary, rangeLabel) : null
 
   const netFlow = hasData ? (summary.creditTotal || 0) - summary.total : 0
+
+  const totalBudgeted   = cats.reduce((s, [cat])      => s + (budgets.totals[cat] || 0), 0)
+  const budgetedSpend   = cats.reduce((s, [cat, amt]) => s + (budgets.totals[cat] > 0 ? amt : 0), 0)
+  const budgetRemaining = totalBudgeted - budgetedSpend
 
   const daysInRange = (() => {
     if (!startMonth || !endMonth) return 30
@@ -488,7 +528,7 @@ export default function DashboardPage() {
                     <h3 className="font-semibold" style={{ color: 'var(--text)' }}>Spending breakdown</h3>
                     <InfoTooltip
                       title="Spending breakdown"
-                      content="All categories sorted by total spending. Bar width shows each category as a % of total spend. Categories assigned by ML model."
+                      content="All categories sorted by total spending. Bar width shows each category as a % of total spend. Categories assigned by ML model. The thinner bar below (where a budget is set) shows spend as a % of that category's budget — green under, amber near, red over."
                     />
                   </div>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{rangeLabel}</p>
@@ -502,15 +542,33 @@ export default function DashboardPage() {
               {cats.sort((a, b) => b[1] - a[1]).map(([cat, amt]) => {
                 const pct = (amt / summary.total) * 100
                 const color = CAT_COLOR(cat)
+                const budgetAmt = budgets.totals[cat]
+                const hasBudget = budgetAmt > 0
+                const budgetPct = hasBudget ? (amt / budgetAmt) * 100 : 0
+                const budgetColor = hasBudget ? BUDGET_COLOR(budgetPct) : null
+                const covered = budgets.covered[cat] || 0
+                const partial = hasBudget && covered < budgets.months
                 return (
                   <div key={cat}>
                     <div className="flex justify-between text-sm mb-1.5">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
-                        <span style={{ color: 'var(--text-2)' }}>{cat}</span>
+                        <span className="truncate" style={{ color: 'var(--text-2)' }}>{cat}</span>
+                        {partial && (
+                          <span className="text-xs flex-shrink-0 px-1 rounded"
+                            title={`Budget set for ${covered} of the ${budgets.months} months in this range`}
+                            style={{ color: 'var(--text-3)', background: 'var(--border)', fontSize: '0.65rem' }}>
+                            {covered}/{budgets.months} mo
+                          </span>
+                        )}
                       </div>
                       <span className="font-medium font-mono" style={{ color: 'var(--text)' }}>
                         ${fmt0(amt)}
+                        {hasBudget && (
+                          <span className="ml-1 font-normal text-xs" style={{ color: budgetColor }}>
+                            /${fmt0(budgetAmt)}
+                          </span>
+                        )}
                         <span className="ml-2 font-normal text-xs" style={{ color: 'var(--text-3)' }}>
                           {pct.toFixed(0)}%
                         </span>
@@ -520,15 +578,55 @@ export default function DashboardPage() {
                       <div className="h-1.5 rounded-full transition-all duration-700"
                         style={{ width: `${pct}%`, background: color }} />
                     </div>
+                    {hasBudget && (
+                      <div className="h-1 rounded-full mt-1" style={{ background: 'var(--border)' }}>
+                        <div className="h-1 rounded-full transition-all duration-700"
+                          style={{ width: `${Math.min(budgetPct, 100)}%`, background: budgetColor }} />
+                      </div>
+                    )}
                   </div>
                 )
               })}
             </div>
-            <div className="mt-5 pt-4 flex justify-between text-sm" style={{ borderTop: '1px solid var(--border)' }}>
-              <span style={{ color: 'var(--text-3)' }}>Total spending</span>
-              <span className="font-semibold font-mono" style={{ color: 'var(--text)' }}>
-                ${fmt2(summary.total)}
-              </span>
+            <div className="mt-5 pt-4 space-y-2 text-sm" style={{ borderTop: '1px solid var(--border)' }}>
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-3)' }}>Total spending</span>
+                <span className="font-semibold font-mono" style={{ color: 'var(--text)' }}>
+                  ${fmt2(summary.total)}
+                </span>
+              </div>
+              {totalBudgeted > 0 && (
+                <>
+                  <div className="flex justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span style={{ color: 'var(--text-3)' }}>Total budgeted</span>
+                      <InfoTooltip
+                        content="Sum of the budgets you set for the categories above, across every month in this range. Categories with no budget are excluded."
+                      />
+                    </div>
+                    <span className="font-semibold font-mono" style={{ color: 'var(--text)' }}>
+                      ${fmt2(totalBudgeted)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span style={{ color: 'var(--text-3)' }}>
+                      {budgetRemaining >= 0 ? 'Left in budget' : 'Over budget'}
+                    </span>
+                    <span className="font-semibold font-mono"
+                      style={{ color: budgetRemaining >= 0 ? '#10B981' : '#EF4444' }}>
+                      ${fmt2(Math.abs(budgetRemaining))}
+                    </span>
+                  </div>
+                </>
+              )}
+              {totalBudgeted === 0 && (
+                <div className="flex justify-between text-xs">
+                  <span style={{ color: 'var(--text-3)' }}>No budgets set for {rangeLabel}</span>
+                  <Link to="/budget" className="font-medium flex items-center gap-1" style={{ color: 'var(--brand)' }}>
+                    Set budgets <ArrowRight size={11} />
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
         </ScrollFade>

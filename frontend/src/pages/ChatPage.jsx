@@ -686,7 +686,20 @@ function ScatterTxns({ chart }) {
           <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={t => { try { return format(new Date(t), 'MMM yy') } catch { return '' } }} tick={{ fontSize: 10, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} />
           <YAxis dataKey="amount" tickFormatter={v => '$' + Math.round(v / 1000) + 'k'} tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} width={44} />
           <ZAxis range={[36, 36]} />
-          <Tooltip {...TOOLTIP_STYLE} formatter={(v, n) => n === 'amount' ? fmt$(v) : null} labelFormatter={() => ''} />
+          <Tooltip
+            {...TOOLTIP_STYLE}
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null
+              const p = payload[0].payload
+              return (
+                <div style={{ ...TOOLTIP_STYLE.contentStyle, padding: '6px 10px' }}>
+                  <div style={{ fontWeight: 600 }}>{p.category || 'Uncategorized'}</div>
+                  <div style={{ color: 'var(--text-3)' }}>{p.description || ''}</div>
+                  <div>{fmt$(p.amount)}</div>
+                </div>
+              )
+            }}
+          />
           <Scatter data={normal} fill="#6366F1" fillOpacity={0.6} />
           <Scatter data={anomalies} fill="#EF4444" />
         </ScatterChart>

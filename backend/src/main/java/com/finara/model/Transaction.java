@@ -51,6 +51,11 @@ public class Transaction {
     @Column(columnDefinition = "TEXT")
     private String anomalyReason;
 
+    private Boolean manuallyFlagged = false;   // true when a user (not the ML model) flagged this
+
+    @Column(columnDefinition = "TEXT")
+    private String userFlagReason;             // user's own note on why it's suspicious; only set when manuallyFlagged
+
     private String merchantName;
     private String rawCsvRow;         // original CSV line for debugging
 
@@ -69,6 +74,8 @@ public class Transaction {
             this.isAnomaly    = false;
             this.anomalyScore  = null;
             this.anomalyReason = null;
+            this.manuallyFlagged = false;
+            this.userFlagReason  = null;
         }
     }
 }

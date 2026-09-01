@@ -238,6 +238,12 @@ function AnomalyCard({ txn, onDelete, onExplain, explaining, explanation }) {
                     <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.55 }}>{details.primary}</p>
                   </div>
                 )}
+                {txn.manuallyFlagged && txn.userFlagReason && (
+                  <div>
+                    <p style={{ fontSize: 9, color: '#F59E0B', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 4 }}>Your note</p>
+                    <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.55 }}>{txn.userFlagReason}</p>
+                  </div>
+                )}
                 {details?.z_score != null && (
                   <div style={{ display: 'flex', gap: 16 }}>
                     <div>

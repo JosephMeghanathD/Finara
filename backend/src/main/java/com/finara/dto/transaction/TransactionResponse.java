@@ -18,5 +18,7 @@ public class TransactionResponse {
     private Boolean   isAnomaly;
     private BigDecimal anomalyScore;
     private String    anomalyReason;
+    private Boolean   manuallyFlagged;
+    private String    userFlagReason;
     private String    uploadBatchId;
 }

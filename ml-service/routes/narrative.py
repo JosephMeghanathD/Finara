@@ -262,8 +262,10 @@ Reply JSON: {{"explanation": "one sentence what this charge is", "likely_categor
 
 
 # Range-based aggregates whose window can be clamped to the UI-selected time filter.
-_RANGE_TYPES = {"monthly_totals", "category_breakdown", "merchant_breakdown"}
-
+_RANGE_TYPES = {
+    "monthly_totals", "category_breakdown", "merchant_breakdown",
+    "category_month_matrix", "money_flow", "transaction_points", "transaction_search"
+}
 
 def _ym_add(ym: str, n: int) -> str:
     """Add n months (may be negative) to a 'YYYY-MM' string."""

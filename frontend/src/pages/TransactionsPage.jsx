@@ -15,6 +15,7 @@ import AiText from '../components/AiText'
 import { FianaApiLoader } from '../components/AiLoader'
 import RangeForecastCard from '../components/RangeForecastCard'
 import ConfirmDialog from '../components/ConfirmDialog'
+import FlagReasonDialog from '../components/FlagReasonDialog'
 import toast from 'react-hot-toast'
 import { useCategories } from '../hooks/useCategories'
 import ScrollFade from '../components/ScrollFade'
@@ -417,7 +418,8 @@ function TxnRowDiv({
   const isMerchantOpen = openMerchant === t.id
   const isMerchantLoading = merchantLoading === t.description
   const merchantData = merchantCache[t.description]
-  const anyExpanded = isMerchantOpen || hasExplanation
+  const hasUserNote = t.manuallyFlagged && !!t.userFlagReason
+  const anyExpanded = isMerchantOpen || hasExplanation || hasUserNote
   const amtPct = Math.min((parseFloat(t.amount) / maxAmount) * 100, 100)
   const accentColor = t.isAnomaly ? '#F59E0B' : catColor
 
@@ -538,6 +540,18 @@ function TxnRowDiv({
           </div>
         </div>
       )}
+
+      {hasUserNote && (
+        <div style={{ padding:'0 16px 10px 55px' }}>
+          <div className="px-3 py-3 rounded-xl" style={{ background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.18)' }}>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Flag size={11} style={{ color:'#F59E0B' }}/>
+              <span className="text-xs font-semibold" style={{ color:'#F59E0B' }}>Your note</span>
+            </div>
+            <p className="text-xs" style={{ color:'var(--text-2)' }}>{t.userFlagReason}</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -615,7 +629,8 @@ function TxnRow({
   const isMerchantOpen = openMerchant === t.id
   const isMerchantLoading = merchantLoading === t.description
   const merchantData = merchantCache[t.description]
-  const anyExpanded = isMerchantOpen || hasExplanation
+  const hasUserNote = t.manuallyFlagged && !!t.userFlagReason
+  const anyExpanded = isMerchantOpen || hasExplanation || hasUserNote
   const amtPct = Math.min((parseFloat(t.amount)/maxAmount)*100, 100)
   const accentColor = t.isAnomaly ? '#F59E0B' : catColor
   return (
@@ -684,7 +699,7 @@ function TxnRow({
         </td>
       </tr>
       {isMerchantOpen && (
-        <tr style={{ borderBottom:hasExplanation?'none':'1px solid var(--border)' }}>
+        <tr style={{ borderBottom:(hasExplanation||hasUserNote)?'none':'1px solid var(--border)' }}>
           <td style={{ padding:0, width:3 }}><div style={{ width:3, height:'100%', background:'#0EA5E9', opacity:0.6 }}/></td>
           <td colSpan={6} style={{ padding:'0 16px 10px 12px' }}>
             <div className="px-3 py-2.5 rounded-xl" style={{ background:'rgba(14,165,233,0.07)', border:'1px solid rgba(14,165,233,0.14)' }}>
@@ -707,7 +722,7 @@ function TxnRow({
         </tr>
       )}
       {hasExplanation && (
-        <tr style={{ borderBottom:'1px solid var(--border)' }}>
+        <tr style={{ borderBottom:hasUserNote?'none':'1px solid var(--border)' }}>
           <td style={{ padding:0, width:3 }}><div style={{ width:3, height:'100%', background:'var(--brand)', opacity:0.7 }}/></td>
           <td colSpan={6} style={{ padding:'0 16px 10px 12px' }}>
             <div className="px-3 py-3 rounded-xl" style={{ background:'var(--brand-light)', border:'1px solid rgba(91,155,255,0.14)' }}>
@@ -715,6 +730,19 @@ function TxnRow({
                 <HelpCircle size={12} style={{ color:'var(--brand)' }}/><span className="text-xs font-semibold" style={{ color:'var(--brand)' }}>Fiana explains</span>
               </div>
               <AiText content={explanations[t.id]} compact/>
+            </div>
+          </td>
+        </tr>
+      )}
+      {hasUserNote && (
+        <tr style={{ borderBottom:'1px solid var(--border)' }}>
+          <td style={{ padding:0, width:3 }}><div style={{ width:3, height:'100%', background:'#F59E0B', opacity:0.7 }}/></td>
+          <td colSpan={6} style={{ padding:'0 16px 10px 12px' }}>
+            <div className="px-3 py-3 rounded-xl" style={{ background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.18)' }}>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Flag size={11} style={{ color:'#F59E0B' }}/><span className="text-xs font-semibold" style={{ color:'#F59E0B' }}>Your note</span>
+              </div>
+              <p className="text-xs" style={{ color:'var(--text-2)' }}>{t.userFlagReason}</p>
             </div>
           </td>
         </tr>
@@ -758,6 +786,7 @@ export default function TransactionsPage() {
   const [editingTxn, setEditingTxn] = useState(null)
   const [togglingAnomaly, setTogglingAnomaly] = useState(null)
   const [confirmTxn, setConfirmTxn] = useState(null)
+  const [flaggingTxn, setFlaggingTxn] = useState(null)
 
   useEffect(() => {
     if (!startDate || !endDate) return
@@ -788,15 +817,18 @@ export default function TransactionsPage() {
     finally { setExplaining(null) }
   }
 
-  const handleAnomaly = async (txn) => {
+  const handleAnomaly = async (txn, reason) => {
     setTogglingAnomaly(txn.id)
     try {
-      const { data } = await txnApi.toggleAnomaly(txn.id, !txn.isAnomaly)
+      const { data } = await txnApi.toggleAnomaly(txn.id, !txn.isAnomaly, reason)
       setTxns(prev => prev.map(t => t.id===txn.id?data:t))
       toast.success(txn.isAnomaly ? 'Anomaly flag removed' : 'Flagged as anomaly')
     } catch { toast.error('Failed to update') }
-    finally { setTogglingAnomaly(null) }
+    finally { setTogglingAnomaly(null); setFlaggingTxn(null) }
   }
+
+  // Flagging asks for an optional reason first; unflagging happens immediately
+  const requestToggleAnomaly = txn => txn.isAnomaly ? handleAnomaly(txn) : setFlaggingTxn(txn)
 
   const handleDelete = async (txn) => {
     try {
@@ -904,7 +936,7 @@ export default function TransactionsPage() {
     isCredit, getColor, maxAmount, explaining, explanations,
     merchantCache, merchantLoading, openMerchant, togglingAnomaly,
     onExplainMerchant:explainMerchantFor, onExplainAnomaly:explainTxn,
-    onToggleAnomaly:handleAnomaly, onEdit:t=>{setEditingTxn(t);setModalOpen(true)},
+    onToggleAnomaly:requestToggleAnomaly, onEdit:t=>{setEditingTxn(t);setModalOpen(true)},
     onDelete:t=>setConfirmTxn(t),
   }
 
@@ -1093,6 +1125,12 @@ export default function TransactionsPage() {
         <ConfirmDialog title="Delete transaction?"
           message={`"${confirmTxn.description}" on ${confirmTxn.transactionDate} will be permanently removed.`}
           confirmLabel="Delete" onConfirm={()=>handleDelete(confirmTxn)} onCancel={()=>setConfirmTxn(null)}/>
+      )}
+      {flaggingTxn && (
+        <FlagReasonDialog txn={flaggingTxn}
+          loading={togglingAnomaly === flaggingTxn.id}
+          onCancel={() => setFlaggingTxn(null)}
+          onConfirm={reason => handleAnomaly(flaggingTxn, reason)}/>
       )}
     </div>
   )

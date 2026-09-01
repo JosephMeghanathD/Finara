@@ -148,15 +148,16 @@ public class TransactionController {
         return ResponseEntity.ok(transactionService.recheckAnomalies(userId, startMonth, endMonth, startDate, endDate));
     }
 
-    /** PATCH /api/transactions/{id}/anomaly  { "isAnomaly": true/false } */
+    /** PATCH /api/transactions/{id}/anomaly  { "isAnomaly": true/false, "userReason": "..." } */
     @PatchMapping("/{id}/anomaly")
     public ResponseEntity<TransactionResponse> toggleAnomaly(
             @PathVariable Long id,
-            @RequestBody Map<String, Boolean> body,
+            @RequestBody Map<String, Object> body,
             HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
         boolean flag = Boolean.TRUE.equals(body.get("isAnomaly"));
-        return ResponseEntity.ok(transactionService.toggleAnomaly(userId, id, flag));
+        Object reason = body.get("userReason");
+        return ResponseEntity.ok(transactionService.toggleAnomaly(userId, id, flag, reason != null ? reason.toString() : null));
     }
 
     /** POST /api/transactions  { description, amount, transactionDate, transactionType, category } */

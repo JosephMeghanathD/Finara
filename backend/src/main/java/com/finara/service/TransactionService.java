@@ -531,13 +531,22 @@ public class TransactionService {
         @CacheEvict(value = "anomaly-explanations", allEntries = true),
         @CacheEvict(value = "coach",                allEntries = true),
     })
-    public TransactionResponse toggleAnomaly(Long userId, Long txnId, boolean isAnomaly) {
+    public TransactionResponse toggleAnomaly(Long userId, Long txnId, boolean isAnomaly, String userReason) {
         Transaction txn = transactionRepository.findById(txnId)
                 .orElseThrow(() -> new RuntimeException("Transaction not found"));
         if (!txn.getUser().getId().equals(userId))
             throw new RuntimeException("Access denied");
         txn.setIsAnomaly(isAnomaly);
-        if (!isAnomaly) { txn.setAnomalyScore(null); txn.setAnomalyReason(null); }
+        if (isAnomaly) {
+            txn.setManuallyFlagged(true);
+            String trimmed = userReason != null ? userReason.trim() : null;
+            txn.setUserFlagReason(trimmed == null || trimmed.isEmpty() ? null : trimmed);
+        } else {
+            txn.setAnomalyScore(null);
+            txn.setAnomalyReason(null);
+            txn.setManuallyFlagged(false);
+            txn.setUserFlagReason(null);
+        }
         return toResponse(transactionRepository.save(txn));
     }
 
@@ -691,6 +700,8 @@ public class TransactionService {
                 .isAnomaly(t.getIsAnomaly())
                 .anomalyScore(t.getAnomalyScore())
                 .anomalyReason(t.getAnomalyReason())
+                .manuallyFlagged(t.getManuallyFlagged())
+                .userFlagReason(t.getUserFlagReason())
                 .uploadBatchId(t.getUploadBatchId())
                 .build();
     }
