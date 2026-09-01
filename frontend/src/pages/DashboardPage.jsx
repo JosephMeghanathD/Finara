@@ -16,20 +16,38 @@ import RangeForecastCard from '../components/RangeForecastCard'
 import ScrollFade from '../components/ScrollFade'
 import InfoTooltip from '../components/InfoTooltip'
 
+// Two category taxonomies reach this chart and both must be covered, or slices
+// fall through to the neutral and render gray:
+//   • seed / manual entry  → "Housing", "Transportation", "Transfer"
+//   • the ML categorizer   → "Rent & Housing", "Transport", "Financial",
+//                            "Subscriptions"  (ml-service/utils/categorizer.py)
+// Stepped for the dark chart surface (--surface #0f1322) and validated against
+// it: the six categories that usually fill the pie together — Housing, Food &
+// Drink, Groceries, Shopping, Transportation, Transfer — clear the ≥15
+// normal-vision separation floor at ΔE 16.3. Six simultaneous slices cannot
+// also clear the ≥8 colorblind floor on this surface (the ceiling is ~11), so
+// the legend below carries identity rather than color alone — keep it showing
+// every slice the pie draws.
 const CATEGORY_COLORS = {
-  'Food & Drink':    '#6366F1',
-  'Groceries':       '#8B5CF6',
-  'Transport':       '#0EA5E9',
-  'Shopping':        '#F59E0B',
-  'Entertainment':   '#10B981',
-  'Healthcare':      '#EF4444',
-  'Utilities':       '#6366F1',
-  'Rent & Housing':  '#84CC16',
-  'Travel':          '#F97316',
-  'Financial':       '#64748B',
-  'Subscriptions':   '#A78BFA',
-  'Personal Care':   '#EC4899',
+  'Housing':         '#3987e5',   // blue
+  'Rent & Housing':  '#d95926',   // orange — kept far from Housing; both can appear at once
+  'Food & Drink':    '#c98500',   // amber
+  'Groceries':       '#199e70',   // green
+  'Shopping':        '#EC4899',   // pink
+  'Transportation':  '#be123c',   // crimson
+  'Transport':       '#d55181',   // rose
+  'Transfer':        '#7e22ce',   // purple
+  'Travel':          '#8B5CF6',   // violet
+  'Utilities':       '#65a30d',   // olive
+  'Healthcare':      '#e66767',   // soft red
+  'Entertainment':   '#9085e9',   // light violet
+  'Personal Care':   '#059669',   // emerald
+  'Financial':       '#0891b2',   // cyan
+  'Subscriptions':   '#16a34a',   // leaf
+  'Income':          '#1baf7a',   // teal
 }
+// Neutral is reserved for genuinely unknown labels — every known category above
+// must resolve to a hue.
 const CAT_COLOR = cat => CATEGORY_COLORS[cat] || '#94A3B8'
 
 function fmtMonth(m) {
@@ -317,7 +335,10 @@ export default function DashboardPage() {
                 </ResponsiveContainer>
               </div>
               <div className="space-y-1.5 mt-2 flex-1">
-                {cats.slice(0, 4).map(([cat, amt]) => (
+                {/* One row per slice the pie draws — six colors this close
+                    together are not separable by hue alone, so the legend is
+                    what actually identifies them. */}
+                {cats.slice(0, 6).map(([cat, amt]) => (
                   <div key={cat} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: CAT_COLOR(cat) }} />
@@ -328,9 +349,9 @@ export default function DashboardPage() {
                     </span>
                   </div>
                 ))}
-                {cats.length > 4 && (
+                {cats.length > 6 && (
                   <p className="text-xs pt-1" style={{ color: 'var(--text-3)' }}>
-                    +{cats.length - 4} more categories
+                    +{cats.length - 6} more categories
                   </p>
                 )}
               </div>

@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """
-Finara Test Data Seed Script v3
+Finara Test Data Seed Script v4
 ================================
 Realistic multi-year financial profile for a software professional.
-Default window is 2020-01 → 2026-08; override with SEED_START / SEED_END
-(YYYY-MM-DD). Era data is defined through 2027-12, so the window can be
-extended that far without touching the schedules.
+Default window is 2023-04-01 → today; override with SEED_START / SEED_END
+(YYYY-MM-DD). Era data is defined from 2020-01 through 2027-12, so the window
+can be widened either way without touching the schedules. The final month is
+normally partial — every generator clips to END and scales its transaction
+counts by the fraction of the month that has actually elapsed.
 
+  • Vacations as multi-day clusters — flight booked weeks ahead, then lodging,
+    local transport, destination dining, attractions and souvenirs. Home-city
+    groceries/gas/dining/retail go quiet for the days spent away.
+  • Health events as episodes rather than one-off spikes — ER or specialist
+    visit followed by imaging, weekly physical therapy and pharmacy copays
+  • Per-category monthly budgets derived from trailing actual spend
   • Bi-weekly salary deposits with annual raises, year-end bonuses, tax refunds
   • Era-aware realism:
       2020  COVID — temporary pay cut, stimulus checks, gym closure, dining
@@ -20,6 +28,10 @@ extended that far without touching the schedules.
   • Variable spend scaled by a per-year inflation factor (2023 = 1.00 baseline)
   • Anomalous transactions spread across the period (those inside the window)
   • Deletes ALL prior data for this user before inserting
+
+Coach tips and financial reports are deliberately NOT seeded — the app writes
+those itself through Gemma. Run ./warm_app_data.sh afterwards to generate them
+against the fresh transactions.
 
     Login : test@gmail.com / test
     Income: $2,640 → $3,920 bi-weekly take-home (2020 → 2027)
@@ -55,8 +67,8 @@ def _date_env(var, default):
     raw = os.getenv(var)
     return date.fromisoformat(raw) if raw else default
 
-START = _date_env("SEED_START", date(2020, 1, 1))
-END   = _date_env("SEED_END",   date(2026, 8, 31))
+START = _date_env("SEED_START", date(2023, 4, 1))
+END   = _date_env("SEED_END",   date.today())
 
 # ── Merchant tables (description, category, merchant_name, min_$, max_$) ─────
 
@@ -154,6 +166,206 @@ PERSONAL_CARE = [
     ("LUXE NAIL SPA",           "Personal Care", "Luxe Nail Spa",         45, 90),
     ("FLOYD'S BARBERSHOP",      "Personal Care", "Floyd's Barbershop",    38, 58),
 ]
+
+# ── Vacations ─────────────────────────────────────────────────────────────────
+# A trip is a cluster, not a pair of big charges. Each entry lists the hand-
+# written anchor charges (`fixed`, by day offset from arrival — a negative
+# offset is a booking made before departure) plus destination merchant pools
+# that fill in the day-to-day spend. Trip days land in AWAY_DAYS, which makes
+# the home-city generators go quiet for the duration.
+#
+#   fixed  : (day_offset, description, merchant, amount, category, anomaly_reason|None)
+#   pools  : (description, merchant, category, min_$, max_$)
+#   counts : how many filler charges to draw from (transport, dining, outings, shopping)
+
+VACATIONS = [
+    dict(
+        label="Las Vegas long weekend", start=date(2023, 8, 2), days=5,
+        fixed=[
+            (-38, "SOUTHWEST AIRLINES FLIGHT", "Southwest Airlines", 558.40, "Travel",
+             "First Travel charge in the dataset; no prior airline spend on record"),
+            (1, "BELLAGIO HOTEL LAS VEGAS", "Bellagio Hotel & Casino", 1680.00, "Travel",
+             "Largest Travel charge to date; 3.0× the airfare booked for the same trip"),
+            (3, "CAESARS PALACE ENTERTAINMENT", "Caesars Palace", 680.00, "Entertainment",
+             "Entertainment charge is 14.2× your average; falls inside an active Travel cluster"),
+            (4, "GORDON RAMSAY HELL KITCHEN", "Gordon Ramsay Hell's Kitchen", 318.00, "Food & Drink",
+             "Restaurant spend is 8.7× your average Food & Drink transaction"),
+        ],
+        transport=[("LYFT *RIDE LAS VEGAS", "Lyft", "Transportation", 16, 48),
+                   ("UBER *TRIP LAS VEGAS", "Uber", "Transportation", 14, 44),
+                   ("HARRY REID AIRPORT PARKING", "Harry Reid Airport", "Travel", 26, 62)],
+        dining=[("IN-N-OUT BURGER #382", "In-N-Out Burger", "Food & Drink", 12, 28),
+                ("MON AMI GABI LAS VEGAS", "Mon Ami Gabi", "Food & Drink", 68, 145),
+                ("BACCHANAL BUFFET", "Bacchanal Buffet", "Food & Drink", 75, 130),
+                ("STARBUCKS BELLAGIO", "Starbucks", "Food & Drink", 8, 18)],
+        outings=[("HIGH ROLLER OBSERVATION WHL", "The LINQ", "Entertainment", 38, 78),
+                 ("CIRQUE DU SOLEIL O TICKETS", "Cirque du Soleil", "Entertainment", 120, 245)],
+        shopping=[("LAS VEGAS GIFT SHOP", "LV Souvenirs", "Shopping", 22, 68)],
+        counts=(3, 6, 2, 1),
+    ),
+    dict(
+        label="Breckenridge ski trip", start=date(2024, 3, 7), days=5,
+        fixed=[
+            (-44, "UNITED AIRLINES CLT-DEN", "United Airlines", 486.00, "Travel", None),
+            (0, "BEAVER RUN RESORT 4NT", "Beaver Run Resort", 1240.00, "Travel",
+             "Largest Travel charge since the Aug 2023 Las Vegas trip; lodging booked for 4 nights"),
+            (1, "EPIC PASS LIFT TICKETS", "Vail Resorts", 642.00, "Entertainment",
+             "Entertainment charge is 12.8× your average; no comparable spend in the prior 6 months"),
+        ],
+        transport=[("HERTZ RENT-A-CAR DENVER", "Hertz", "Travel", 180, 320),
+                   ("SHELL BRECKENRIDGE CO", "Shell", "Transportation", 48, 78)],
+        dining=[("BRECKENRIDGE BREWERY", "Breckenridge Brewery", "Food & Drink", 42, 88),
+                ("HEARTHSTONE RESTAURANT", "Hearthstone Restaurant", "Food & Drink", 78, 165),
+                ("CREPES A LA CART", "Crepes a la Cart", "Food & Drink", 14, 32),
+                ("COLUMBINE CAFE BRECK", "Columbine Cafe", "Food & Drink", 22, 48)],
+        outings=[("SKI RENTAL BRECKENRIDGE", "Christy Sports", "Entertainment", 95, 180)],
+        shopping=[("PATAGONIA BRECKENRIDGE", "Patagonia", "Shopping", 85, 240)],
+        counts=(2, 6, 1, 1),
+    ),
+    dict(
+        label="Paris — eight days", start=date(2025, 6, 10), days=8,
+        fixed=[
+            (-52, "DELTA INTL PARIS ROUNDTRIP", "Delta Air Lines", 2840.00, "Travel",
+             "Largest Travel charge on record; international flight — no prior transatlantic "
+             "booking in the dataset"),
+            (1, "HOTEL LUTETIA PARIS 5NT", "Hotel Lutetia", 2460.00, "Travel",
+             "Luxury hotel — second large Travel charge within 24 hours; combined trip spend "
+             "is the highest on record"),
+            (4, "PARIS FINE DINING ALAIN DUC", "Alain Ducasse au Plaza Athénée", 520.00, "Food & Drink",
+             "Restaurant spend is 9.6× your average Food & Drink transaction; fine dining "
+             "inside an active international Travel cluster"),
+        ],
+        transport=[("UBER *TRIP PARIS FR", "Uber", "Transportation", 18, 46),
+                   ("RATP METRO CARNET", "RATP", "Transportation", 12, 34),
+                   ("SNCF VOYAGES VERSAILLES", "SNCF", "Travel", 24, 58),
+                   ("TAXI G7 PARIS CDG", "Taxi G7", "Transportation", 55, 92)],
+        dining=[("LE COMPTOIR DU RELAIS", "Le Comptoir du Relais", "Food & Drink", 62, 128),
+                ("BOULANGERIE POILANE", "Poilâne", "Food & Drink", 9, 24),
+                ("CAFE DE FLORE PARIS", "Café de Flore", "Food & Drink", 28, 65),
+                ("BRASSERIE LIPP ST GERMAIN", "Brasserie Lipp", "Food & Drink", 74, 155),
+                ("L'AS DU FALLAFEL MARAIS", "L'As du Fallafel", "Food & Drink", 14, 30)],
+        outings=[("MUSEE DU LOUVRE", "Musée du Louvre", "Entertainment", 22, 48),
+                 ("MUSEE D'ORSAY BILLETS", "Musée d'Orsay", "Entertainment", 18, 40),
+                 ("SEINE RIVER CRUISE", "Bateaux Parisiens", "Entertainment", 35, 78)],
+        shopping=[("GALERIES LAFAYETTE PARIS", "Galeries Lafayette", "Shopping", 120, 420),
+                  ("LE BON MARCHE RIVE GAUCHE", "Le Bon Marché", "Shopping", 85, 260)],
+        counts=(5, 9, 3, 2),
+    ),
+    dict(
+        label="Thanksgiving with family — road trip", start=date(2025, 11, 25), days=5,
+        fixed=[
+            (0, "EXXONMOBIL I-85 ROAD TRIP", "ExxonMobil", 82.40, "Transportation", None),
+            (1, "NC TURNPIKE TOLL", "NC Quick Pass", 18.75, "Transportation", None),
+            (2, "HARRIS TEETER THANKSGIVING", "Harris Teeter", 186.20, "Groceries", None),
+        ],
+        transport=[("SHELL OIL RICHMOND VA", "Shell", "Transportation", 52, 84)],
+        dining=[("CRACKER BARREL #482", "Cracker Barrel", "Food & Drink", 28, 62),
+                ("BOJANGLES #1042", "Bojangles", "Food & Drink", 11, 26),
+                ("STARBUCKS I-95 REST STOP", "Starbucks", "Food & Drink", 7, 16)],
+        outings=[("AMC THEATRES FAMILY OUTING", "AMC Theatres", "Entertainment", 42, 86)],
+        shopping=[("TARGET HOLIDAY GIFTS", "Target", "Shopping", 65, 180)],
+        counts=(1, 4, 1, 1),
+    ),
+    dict(
+        label="Maui — summer week", start=date(2026, 7, 8), days=7,
+        fixed=[
+            (-45, "UNITED AIRLINES SEA-KOA", "United Airlines", 1340.00, "Travel",
+             "Largest Travel charge of 2026; long-haul booking well above your typical airfare"),
+            (1, "FOUR SEASONS RESORT MAUI", "Four Seasons Resort", 2580.00, "Travel",
+             "Resort lodging is the single largest Travel charge on record for a domestic trip; "
+             "1.9× the airfare booked for the same week"),
+        ],
+        transport=[("ALAMO RENT A CAR OGG", "Alamo", "Travel", 320, 520),
+                   ("CHEVRON KIHEI HI", "Chevron", "Transportation", 58, 92)],
+        dining=[("MAMA'S FISH HOUSE", "Mama's Fish House", "Food & Drink", 165, 320),
+                ("MONKEYPOD KITCHEN WAILEA", "Monkeypod Kitchen", "Food & Drink", 58, 125),
+                ("LEODA'S KITCHEN & PIE SHOP", "Leoda's", "Food & Drink", 24, 52),
+                ("KIHEI CAFFE MAUI", "Kihei Caffe", "Food & Drink", 18, 42),
+                ("FOODLAND FARMS KIHEI", "Foodland", "Groceries", 48, 118)],
+        outings=[("TRILOGY SNORKEL EXCURSION", "Trilogy Excursions", "Entertainment", 145, 290),
+                 ("HALEAKALA NATIONAL PARK", "Recreation.gov", "Entertainment", 30, 62),
+                 ("OLD LAHAINA LUAU", "Old Lahaina Luau", "Entertainment", 180, 340)],
+        shopping=[("MAUI DIVERS JEWELRY", "Maui Divers", "Shopping", 95, 320),
+                  ("WHALERS VILLAGE GIFTS", "Whalers Village", "Shopping", 35, 110)],
+        counts=(3, 8, 3, 2),
+    ),
+]
+
+# ── Health episodes ───────────────────────────────────────────────────────────
+# A real medical event leaves a trail: the initial visit, then imaging, follow-
+# ups, a course of therapy and pharmacy copays over the following weeks. Only
+# the initial spike is anomalous — the follow-up care is what makes it read as
+# genuine rather than a random large charge.
+#
+#   visits    : (day_offset, description, merchant, amount, category, anomaly_reason|None)
+#   recurring : (first_offset, every_n_days, count, description, merchant, min_$, max_$)
+
+HEALTH_EPISODES = [
+    dict(
+        label="Knee injury — ER, MRI, physical therapy", onset=date(2024, 2, 12),
+        visits=[
+            (0, "REGIONAL MEDICAL CENTER ER", "Regional Medical Center", 3840.00, "Healthcare",
+             "Largest single charge in entire dataset; ER visit is 28× your average "
+             "Healthcare transaction"),
+            (1, "CVS PHARMACY ER PRESCRIPTS", "CVS Pharmacy", 340.00, "Healthcare",
+             "Pharmacy charge is 6.8× your average; same-week follow-up to an ER visit"),
+            (8, "PIEDMONT ORTHOPAEDIC CONSULT", "Piedmont Orthopaedics", 285.00, "Healthcare", None),
+            (15, "ADVANCED IMAGING MRI KNEE", "Advanced Imaging Center", 1150.00, "Healthcare",
+             "Imaging charge is 8.4× your average Healthcare transaction; part of an "
+             "ongoing care episode that began with an ER visit"),
+            (23, "PIEDMONT ORTHO FOLLOW-UP", "Piedmont Orthopaedics", 165.00, "Healthcare", None),
+            (26, "WALGREENS #18342 RX REFILL", "Walgreens", 48.30, "Healthcare", None),
+            (72, "PIEDMONT ORTHO DISCHARGE", "Piedmont Orthopaedics", 145.00, "Healthcare", None),
+        ],
+        recurring=[(29, 7, 8, "CAROLINA PHYSICAL THERAPY", "Carolina Physical Therapy", 55, 78)],
+    ),
+    dict(
+        label="Dental implant", onset=date(2025, 3, 6),
+        visits=[
+            (-21, "BRIGHT SMILE DENTAL CONSULT", "Bright Smile Dental", 210.00, "Healthcare", None),
+            (0, "ADVANCED DENTAL IMPLANTS", "Advanced Dental Implants PC", 2280.00, "Healthcare",
+             "Healthcare charge is 16.5× your median; dental implant — specialist not "
+             "previously seen in the dataset"),
+            (1, "WALGREENS POST-DENTAL RX", "Walgreens", 185.00, "Healthcare",
+             "Pharmacy charge is 3.7× your average; immediately follows an oral surgery"),
+            (12, "ADVANCED DENTAL IMPLANTS F/U", "Advanced Dental Implants PC", 175.00, "Healthcare", None),
+            (48, "ADVANCED DENTAL IMPLANTS CRWN", "Advanced Dental Implants PC", 890.00, "Healthcare", None),
+        ],
+        recurring=[],
+    ),
+    dict(
+        label="Annual physical and vision", onset=date(2025, 9, 16),
+        visits=[
+            (0, "CAROLINA FAMILY MEDICINE", "Carolina Family Medicine", 195.00, "Healthcare", None),
+            (2, "QUEST DIAGNOSTICS LABWORK", "Quest Diagnostics", 148.60, "Healthcare", None),
+            (19, "PEARLE VISION EYE EXAM", "Pearle Vision", 128.00, "Healthcare", None),
+            (19, "PEARLE VISION LENSES", "Pearle Vision", 342.00, "Healthcare", None),
+        ],
+        recurring=[],
+    ),
+    dict(
+        label="Influenza — urgent care", onset=date(2026, 1, 21),
+        visits=[
+            (0, "FASTMED URGENT CARE #12", "FastMed Urgent Care", 175.00, "Healthcare", None),
+            (0, "CVS PHARMACY #9023 TAMIFLU", "CVS Pharmacy", 68.40, "Healthcare", None),
+            (4, "WALGREENS #18342 COUGH RX", "Walgreens", 32.15, "Healthcare", None),
+        ],
+        recurring=[],
+    ),
+    dict(
+        label="Annual physical and vision", onset=date(2026, 5, 19),
+        visits=[
+            (0, "CAROLINA FAMILY MEDICINE", "Carolina Family Medicine", 205.00, "Healthcare", None),
+            (2, "QUEST DIAGNOSTICS LABWORK", "Quest Diagnostics", 156.40, "Healthcare", None),
+            (24, "PEARLE VISION EYE EXAM", "Pearle Vision", 135.00, "Healthcare", None),
+        ],
+        recurring=[],
+    ),
+]
+
+# Days spent away from home, filled in by build_trip_rows(). The home-city
+# generators skip these so the ordinary baseline thins out during a trip.
+AWAY_DAYS: set = set()
 
 # ── Era schedules ─────────────────────────────────────────────────────────────
 # Each is a list of ((year, month), value) sorted ascending; `sched()` returns
@@ -319,21 +531,7 @@ ANOMALIES = [
      "TOYOTA OF HENDRICK SERVICE", "Toyota Dealership", 2840.00, "Transportation",
      "Dealer service charge is 9.2× your average Transportation transaction; "
      "transmission repair — single largest Transportation expense on record"),
-    (2023, 8, 2,
-     "SOUTHWEST AIRLINES FLIGHT", "Southwest Airlines", 558.40, "Travel",
-     "No Travel spend in prior 11 months; first large Travel charge of the year"),
-    (2023, 8, 3,
-     "BELLAGIO HOTEL LAS VEGAS", "Bellagio Hotel & Casino", 1680.00, "Travel",
-     "Hotel charge day after airline ticket; combined 2-day Travel spend "
-     "highest of the trailing 12 months"),
-    (2023, 8, 5,
-     "CAESARS PALACE ENTERTAINMENT", "Caesars Palace", 680.00, "Entertainment",
-     "Entertainment spend is 8.4× your typical Entertainment transaction; "
-     "charged while Travel cluster is active"),
-    (2023, 8, 6,
-     "GORDON RAMSAY HELL KITCHEN", "Gordon Ramsay Hell's Kitchen", 318.00, "Food & Drink",
-     "Restaurant charge is 7.1× your average Food & Drink transaction; "
-     "upscale dining during Las Vegas travel window"),
+    # Aug 2023 Las Vegas trip now lives in VACATIONS
     (2023, 11, 24,
      "AMAZON.COM*BLACK FRIDAY TV", "Amazon.com", 1847.00, "Shopping",
      "Largest Amazon charge in dataset; 11.2× your average Amazon transaction"),
@@ -347,14 +545,7 @@ ANOMALIES = [
      "for Shopping — elevated holiday-season pattern"),
 
     # ── 2024 ──────────────────────────────────────────────────────────────
-    (2024, 2, 12,
-     "REGIONAL MEDICAL CENTER ER", "Regional Medical Center", 3840.00, "Healthcare",
-     "Largest Healthcare charge in the entire dataset; ER visit is 28× your "
-     "typical Healthcare transaction — emergency medical pattern detected"),
-    (2024, 2, 13,
-     "CVS PHARMACY ER PRESCRIPTS", "CVS Pharmacy", 340.00, "Healthcare",
-     "Pharmacy spend is 4.2× typical; follows large ER charge — "
-     "2-day Healthcare cluster anomaly ($4,180 combined)"),
+    # Feb 2024 knee injury now lives in HEALTH_EPISODES
     (2024, 5, 11,
      "APPLE STORE MACBOOK PRO M3", "Apple Store", 2499.00, "Shopping",
      "Highest single Shopping transaction on record; Apple Store not seen "
@@ -377,26 +568,8 @@ ANOMALIES = [
      "December Shopping charge outside of Black Friday window"),
 
     # ── 2025 ──────────────────────────────────────────────────────────────
-    (2025, 3, 6,
-     "ADVANCED DENTAL IMPLANTS", "Advanced Dental Implants PC", 2280.00, "Healthcare",
-     "Healthcare charge is 16.5× your median; dental implant — "
-     "specialist not previously seen, far exceeds any prior dental spend"),
-    (2025, 3, 7,
-     "WALGREENS POST-DENTAL RX", "Walgreens", 185.00, "Healthcare",
-     "Elevated pharmacy spend day after dental implant procedure; "
-     "prescription cluster following specialist visit"),
-    (2025, 6, 10,
-     "DELTA INTL PARIS ROUNDTRIP", "Delta Air Lines", 2840.00, "Travel",
-     "Largest Travel charge on record; international flight — "
-     "no Travel spend in prior 12 months"),
-    (2025, 6, 11,
-     "HOTEL LUTETIA PARIS 5NT", "Hotel Lutetia", 2460.00, "Travel",
-     "Luxury hotel — second large Travel charge within 24 hours; "
-     "combined 2-day Travel total ($5,300) is 5× your median travel event"),
-    (2025, 6, 14,
-     "PARIS FINE DINING ALAIN DUC", "Alain Ducasse au Plaza Athénée", 520.00, "Food & Drink",
-     "Restaurant spend is 9.8× your average Food & Drink transaction; "
-     "fine-dining charge while international Travel cluster is active"),
+    # Mar 2025 dental implant now lives in HEALTH_EPISODES
+    # Jun 2025 Paris trip now lives in VACATIONS
     (2025, 9, 12,
      "NEWEGG COMPUTER PARTS", "Newegg", 1380.00, "Shopping",
      "Merchant first seen in dataset; large tech spend with no similar "
@@ -419,14 +592,7 @@ ANOMALIES = [
      "EMERGENCY PLUMBING & DRAIN", "Emergency Plumbing Services LLC", 2100.00, "Utilities",
      "Utilities charge is 14.2× your average Utilities transaction; "
      "emergency after-hours service — out-of-band payment pattern"),
-    (2026, 7, 8,
-     "UNITED AIRLINES SEA-KOA", "United Airlines", 1340.00, "Travel",
-     "First Travel charge in 13 months; flight purchase resets a year-long "
-     "gap in the Travel category"),
-    (2026, 7, 9,
-     "FOUR SEASONS RESORT MAUI", "Four Seasons Resort", 2580.00, "Travel",
-     "Second large Travel charge within 24 hours; combined 2-day Travel total "
-     "of $3,920 is the highest travel event since the Paris trip"),
+    # Jul 2026 Maui trip now lives in VACATIONS
     (2026, 9, 19,
      "APPLE STORE IPHONE 18 PRO", "Apple Store", 1480.00, "Shopping",
      "Apple Store not seen in prior 28 months; charge is 12.1× your average "
@@ -504,9 +670,51 @@ def infl(y, lo, hi):
     return round(random.uniform(lo, hi) * f, 2)
 
 
+def days_in_month(y, m):
+    """Calendar length of the month, ignoring the END cap."""
+    first_next = (date(y, m, 28) + timedelta(days=4)).replace(day=1)
+    return (first_next - timedelta(days=1)).day
+
+
 def rand_day(y, m, lo=1, hi=None):
+    """Random day in [lo, hi], clipped to END.
+
+    Returns None when the requested window sits entirely past END — the final
+    month of a seed is normally partial, so a bill dated the 16th simply has
+    not happened yet. Callers pass the result straight to debit()/credit(),
+    which drop None.
+    """
     ceiling = month_end(y, m).day
-    return date(y, m, random.randint(lo, min(hi or ceiling, ceiling)))
+    hi = min(hi or ceiling, ceiling)
+    if lo > hi:
+        return None
+    return date(y, m, random.randint(lo, hi))
+
+
+def home_day(y, m, lo=1, hi=None):
+    """Like rand_day(), but None if the day falls inside a vacation.
+
+    Dropping the transaction rather than re-rolling the day is deliberate: it
+    thins the home-city baseline in proportion to the days spent away, which
+    is what actually happens. Re-rolling would just shuffle the same spend
+    into the days on either side of the trip.
+    """
+    d = rand_day(y, m, lo, hi)
+    return None if d is None or d in AWAY_DAYS else d
+
+
+def scaled(n, frac):
+    """Scale a whole-month transaction count to a partial month.
+
+    The remainder is resolved by a coin flip so that, say, 15 dining trips in
+    a month that is 1/30 elapsed yields 0 or 1 rather than always rounding to
+    the same value.
+    """
+    if frac >= 1.0:
+        return n
+    exact = n * frac
+    whole = int(exact)
+    return whole + (1 if random.random() < exact - whole else 0)
 
 
 def paycheck_amount(pay_date):
@@ -515,6 +723,126 @@ def paycheck_amount(pay_date):
     if (pay_date.year, pay_date.month) in COVID_PAY_CUT:
         base *= 0.92
     return round(base + random.uniform(-28, 28), 2)
+
+
+def anomaly_score():
+    return round(random.uniform(0.79, 0.97), 4)
+
+
+def build_trip_rows():
+    """Expand VACATIONS into per-month charges and populate AWAY_DAYS.
+
+    Returns (year, month) → [(date, desc, merchant, amount, category,
+    is_anomaly, score, reason)]. Runs before the monthly loop so that the
+    home-city generators can already see AWAY_DAYS.
+    """
+    out: dict = {}
+
+    def add(d, desc, merch, amount, cat, reason=None):
+        if d < START or d > END:
+            return
+        out.setdefault((d.year, d.month), []).append(
+            (d, desc, merch, amount, cat,
+             bool(reason), anomaly_score() if reason else None, reason))
+
+    for trip in VACATIONS:
+        start, span = trip["start"], trip["days"]
+
+        # Only the days actually on the trip count as "away" — the flight is
+        # usually booked weeks earlier, while still at home.
+        for offset in range(span):
+            AWAY_DAYS.add(start + timedelta(days=offset))
+
+        for offset, desc, merch, amount, cat, reason in trip["fixed"]:
+            add(start + timedelta(days=offset), desc, merch, amount, cat, reason)
+
+        # Dining and transport repeat — you eat out and move around all week.
+        # Outings and souvenirs are drawn without replacement: you visit the
+        # Louvre once, not twice.
+        n_transport, n_dining, n_outings, n_shopping = trip["counts"]
+        for pool, count, repeats in ((trip["transport"], n_transport, True),
+                                     (trip["dining"],    n_dining,    True),
+                                     (trip["outings"],   n_outings,   False),
+                                     (trip["shopping"],  n_shopping,  False)):
+            if not pool:
+                continue
+            picks = ([random.choice(pool) for _ in range(count)] if repeats
+                     else random.sample(pool, min(count, len(pool))))
+            for desc, merch, cat, lo, hi in picks:
+                day = start + timedelta(days=random.randint(0, span - 1))
+                add(day, desc, merch, infl(day.year, lo, hi), cat)
+
+    return out
+
+
+def build_health_rows():
+    """Expand HEALTH_EPISODES into per-month charges.
+
+    Same return shape as build_trip_rows(). Only the initial spike carries an
+    anomaly reason; the follow-up visits, therapy course and refills are
+    ordinary charges, which is what makes the episode read as real care rather
+    than a lone outlier.
+    """
+    out: dict = {}
+
+    def add(d, desc, merch, amount, cat, reason=None):
+        if d < START or d > END:
+            return
+        out.setdefault((d.year, d.month), []).append(
+            (d, desc, merch, amount, cat,
+             bool(reason), anomaly_score() if reason else None, reason))
+
+    for ep in HEALTH_EPISODES:
+        onset = ep["onset"]
+        for offset, desc, merch, amount, cat, reason in ep["visits"]:
+            add(onset + timedelta(days=offset), desc, merch, amount, cat, reason)
+
+        for first, every, count, desc, merch, lo, hi in ep.get("recurring", []):
+            for i in range(count):
+                day = onset + timedelta(days=first + i * every)
+                add(day, desc, merch, infl(day.year, lo, hi), "Healthcare")
+
+    return out
+
+
+def build_budgets(rows, months=12):
+    """Per-category monthly budgets for the last `months` of the window.
+
+    Each budget is the trailing 3-month mean actual for that category, jittered
+    ±10-15% and rounded to $25. Anchoring to real spend is what makes
+    budget-vs-actual interesting: most months land close, and the months
+    holding a vacation or a medical episode blow through Travel, Food & Drink
+    and Healthcare on their own.
+    """
+    excluded = {"Income", "Transfer"}
+    actual: dict = {}
+    for tx_date, _desc, _merch, amount, cat, tx_type, *_rest in rows:
+        if tx_type != "DEBIT" or cat in excluded:
+            continue
+        bucket = actual.setdefault((tx_date.year, tx_date.month), {})
+        bucket[cat] = bucket.get(cat, 0.0) + float(amount)
+
+    out = []
+    for (y, m) in sorted(actual)[-months:]:
+        prior = []
+        for back in (1, 2, 3):
+            py, pm = y, m - back
+            while pm < 1:
+                py, pm = py - 1, pm + 12
+            if (py, pm) in actual:
+                prior.append(actual[(py, pm)])
+        if not prior:
+            continue
+
+        categories = set().union(*(p.keys() for p in prior))
+        for cat in sorted(categories):
+            mean = sum(p.get(cat, 0.0) for p in prior) / len(prior)
+            if mean < 20:          # not worth budgeting a category you barely use
+                continue
+            amount = mean * random.uniform(0.90, 1.15)
+            out.append((cat, f"{y}-{m:02d}", max(25.0, round(amount / 25) * 25.0)))
+
+    return out
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -530,19 +858,25 @@ def main():
     cur.execute("""
         INSERT INTO users
             (email, password_hash, first_name, last_name, monthly_income, created_at)
-        VALUES (%s, %s, 'Test', 'User', 8500.00, NOW())
+        VALUES (%s, %s, 'Alex', 'Chen', 7500.00, NOW())
         ON CONFLICT (email) DO UPDATE
-            SET password_hash  = EXCLUDED.password_hash,
-                monthly_income = EXCLUDED.monthly_income
+            SET password_hash = EXCLUDED.password_hash
         RETURNING id
     """, ("test@gmail.com", pw_hash))
     user_id = cur.fetchone()[0]
     print(f"User id={user_id}  (test@gmail.com / test)")
 
     # ── 2. Wipe all existing data for this user ─────────────────────────────
-    cur.execute("DELETE FROM transactions      WHERE user_id = %s", (user_id,))
-    cur.execute("DELETE FROM financial_reports WHERE user_id = %s", (user_id,))
-    cur.execute("DELETE FROM budgets           WHERE user_id = %s", (user_id,))
+    # Coach tips and reports are cleared but NOT regenerated here — they are
+    # written by the app through Gemma, and hand-seeding them is exactly how
+    # the previous dataset ended up with tips citing categories that did not
+    # exist in the transactions. ./warm_app_data.sh regenerates them for real.
+    cur.execute("DELETE FROM coach_task_completions WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM coach_completions      WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM coach_tips             WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM transactions           WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM financial_reports      WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM budgets                WHERE user_id = %s", (user_id,))
     print("Cleared prior data.")
 
     # ── 3. Anomaly lookup  (year,month) → [(day,desc,merch,amt,cat,reason)] ─
@@ -556,14 +890,26 @@ def main():
     for sd, sdesc, smerch, samt in STIMULUS:
         stim_lookup.setdefault((sd.year, sd.month), []).append((sd, sdesc, smerch, samt))
 
+    # Vacations and health episodes span month boundaries, so they are expanded
+    # up front and keyed by month like the anomalies. build_trip_rows() also
+    # fills AWAY_DAYS, which the monthly loop reads via home_day().
+    trip_lookup   = build_trip_rows()
+    health_lookup = build_health_rows()
+
     rows = []   # (date, desc, merch, amount, cat, tx_type, is_anom, score, reason, batch)
 
     def debit(d, desc, merch, amount, cat,
               is_anom=False, score=None, reason=None, batch=None):
+        # d is None when a generator's day window lies past END, or when the
+        # day fell inside a vacation. Both mean "this did not happen".
+        if d is None or d > END:
+            return
         rows.append((d, desc, merch, amount, cat,
                      "DEBIT", is_anom, score, reason, batch or _batch))
 
     def credit(d, desc, merch, amount, cat, batch=None):
+        if d is None or d > END:
+            return
         rows.append((d, desc, merch, amount, cat,
                      "CREDIT", False, None, None, batch or _batch))
 
@@ -580,6 +926,11 @@ def main():
         y, m = cur_month.year, cur_month.month
         me = month_end(y, m)
         _batch = uuid.uuid4().hex[:8]
+
+        # Fraction of the month that has actually elapsed. Normally 1.0; on the
+        # final month it shrinks the random-day counts, so a seed run on the
+        # 1st doesn't dump a whole month of restaurant visits onto day one.
+        elapsed = me.day / days_in_month(y, m)
 
         is_holiday  = m in {11, 12}
         is_summer   = m in {6, 7, 8}
@@ -683,8 +1034,11 @@ def main():
             n_grocery, g_mult = random.randint(5, 7), 1.20
         else:
             n_grocery, g_mult = random.randint(5, 9), 1.00
+        n_grocery = scaled(n_grocery, elapsed)
         g_days = sorted(random.sample(range(1, me.day + 1), min(n_grocery, me.day)))
         for gd in g_days:
+            if date(y, m, gd) in AWAY_DAYS:      # no home grocery runs while away
+                continue
             desc, cat, merch, lo, hi = random.choice(GROCERY_STORES)
             debit(date(y, m, gd), desc, merch, round(infl(y, lo, hi) * g_mult, 2), cat)
 
@@ -698,9 +1052,9 @@ def main():
             n_dining = (random.randint(18, 26) if (is_summer or m == 2)
                         else random.randint(14, 20) if is_holiday
                         else random.randint(10, 17))
-        for _ in range(n_dining):
+        for _ in range(scaled(n_dining, elapsed)):
             desc, cat, merch, lo, hi = random.choice(pool)
-            debit(rand_day(y, m), desc, merch, infl(y, lo, hi), cat)
+            debit(home_day(y, m), desc, merch, infl(y, lo, hi), cat)
 
         # ── GAS  (fill-ups track commuting; price tracks the market) ──────
         if lockdown:
@@ -712,9 +1066,9 @@ def main():
         gas_f = GAS_FACTOR[y]
         if y == 2022 and m in {5, 6, 7}:     # summer 2022 peak at the pump
             gas_f = 1.38
-        for _ in range(n_fill):
+        for _ in range(scaled(n_fill, elapsed)):
             desc, cat, merch = random.choice(GAS_STATIONS)
-            debit(rand_day(y, m), desc, merch, round(rnd(55, 98) * gas_f, 2), cat)
+            debit(home_day(y, m), desc, merch, round(rnd(55, 98) * gas_f, 2), cat)
 
         # ── AMAZON  (online shopping surged during lockdown) ──────────────
         if lockdown or cautious:
@@ -723,32 +1077,33 @@ def main():
             n_amzn = random.randint(6, 14)
         else:
             n_amzn = random.randint(3, 7)
-        for _ in range(n_amzn):
+        # Amazon keeps running while away — it's ordering, not a trip out.
+        for _ in range(scaled(n_amzn, elapsed)):
             desc, merch = random.choice(AMAZON_DESCS)
             debit(rand_day(y, m), desc, merch, infl(y, 18, 140), "Shopping")
 
         # ── RETAIL SHOPPING  (in-store trips collapsed during lockdown) ───
         n_retail = 1 if lockdown else random.randint(2, 5)
-        for _ in range(n_retail):
+        for _ in range(scaled(n_retail, elapsed)):
             desc, cat, merch, lo, hi = random.choice(RETAIL_SHOPS)
-            debit(rand_day(y, m), desc, merch, infl(y, lo, hi), cat)
+            debit(home_day(y, m), desc, merch, infl(y, lo, hi), cat)
 
         # ── PHARMACY ──────────────────────────────────────────────────────
-        if random.random() < (0.75 if (lockdown or cautious) else 0.45):
+        if random.random() < (0.75 if (lockdown or cautious) else 0.45) * elapsed:
             desc, cat, merch = random.choice(PHARMA)
-            debit(rand_day(y, m), desc, merch, infl(y, 15, 75), cat)
+            debit(home_day(y, m), desc, merch, infl(y, 15, 75), cat)
 
         # ── ENTERTAINMENT ─────────────────────────────────────────────────
         # Theaters/venues were closed Mar 2020 → Mar 2021: games only
         ent_pool = COVID_ENTERTAINMENT if (lockdown or cautious) else ENTERTAINMENT_ITEMS
-        if random.random() < (0.70 if (lockdown or cautious) else 0.60):
+        if random.random() < (0.70 if (lockdown or cautious) else 0.60) * elapsed:
             desc, cat, merch, lo, hi = random.choice(ent_pool)
-            debit(rand_day(y, m), desc, merch, infl(y, lo, hi), cat)
+            debit(home_day(y, m), desc, merch, infl(y, lo, hi), cat)
 
         # ── PERSONAL CARE  (barbershops shut Apr–Jun 2020) ────────────────
-        if not (y == 2020 and m in {4, 5, 6}) and random.random() < 0.85:
+        if not (y == 2020 and m in {4, 5, 6}) and random.random() < 0.85 * elapsed:
             desc, cat, merch, lo, hi = random.choice(PERSONAL_CARE)
-            debit(rand_day(y, m, 5, 25), desc, merch, infl(y, lo, hi), cat)
+            debit(home_day(y, m, 5, 25), desc, merch, infl(y, lo, hi), cat)
 
         # ── MONTHLY SAVINGS TRANSFER ──────────────────────────────────────
         s_lo, s_hi = SAVINGS_RANGE[y]
@@ -817,11 +1172,17 @@ def main():
             debit(rand_day(y, m, 8, 28), "NATIONAL PARK RECREATION",
                   "Recreation.gov", infl(y, 28, 75), "Entertainment")
 
+        # ── VACATION + HEALTH EPISODE charges falling in this month ────────
+        #   Pre-expanded above; emitted here so they share the month's batch.
+        for tx_date, desc, merch, amt, cat, is_anom, score, reason in (
+                trip_lookup.get((y, m), []) + health_lookup.get((y, m), [])):
+            debit(tx_date, desc, merch, amt, cat,
+                  is_anom=is_anom, score=score, reason=reason)
+
         # ── ANOMALIES for this month (same batch as regular transactions) ───
         for ad, desc, merch, amt, cat, reason in anom_lookup.get((y, m), []):
-            score = round(random.uniform(0.79, 0.97), 4)
             debit(date(y, m, ad), desc, merch, amt, cat,
-                  is_anom=True, score=score, reason=reason)
+                  is_anom=True, score=anomaly_score(), reason=reason)
 
         # ── Advance to next month ──────────────────────────────────────────
         cur_month = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
@@ -850,6 +1211,15 @@ def main():
     """, payload,
         template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())",
         page_size=500)
+
+    # ── 5b. Budgets, derived from the spend just generated ──────────────────
+    budgets = build_budgets(rows)
+    print(f"Inserting {len(budgets)} budgets …")
+    execute_values(cur, """
+        INSERT INTO budgets (user_id, category, month, budget_amount, created_at)
+        VALUES %s
+    """, [(user_id, cat, month, amt) for cat, month, amt in budgets],
+        template="(%s,%s,%s,%s,NOW())")
 
     conn.commit()
     cur.close()
@@ -880,6 +1250,14 @@ def main():
     print(f"    Income (CREDIT) : {n_credit}  (bi-weekly pay + bonuses + refunds + stimulus)")
     print(f"    Expense (DEBIT) : {n_debit}")
     print(f"    Anomalies       : {n_anom}")
+    n_travel = sum(1 for r in rows if r[4] == "Travel")
+    n_health = sum(1 for r in rows if r[4] == "Healthcare")
+    trips    = sum(1 for t in VACATIONS if START <= t["start"] <= END)
+    episodes = sum(1 for e in HEALTH_EPISODES if START <= e["onset"] <= END)
+    print(f"    Travel rows     : {n_travel}  ({trips} vacations, "
+          f"{len(AWAY_DAYS)} days away)")
+    print(f"    Healthcare rows : {n_health}  ({episodes} health episodes)")
+    print(f"    Budgets         : {len(budgets)}")
     print("-" * 62)
     print(f"  {'Year':<6}{'Rows':>7}{'Income':>14}{'Spend':>14}{'Net':>14}")
     for yr in sorted(by_year):
